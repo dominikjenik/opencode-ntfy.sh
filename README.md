@@ -21,7 +21,7 @@ The plugin sends notifications for three events:
 - **Permission Asked** -- The agent needs permission to perform an action.
   Includes the project name, timestamp, permission type, and patterns.
 
-If `OPENCODE_NTFY_TOPIC` is not set, the plugin does nothing.
+If the config file does not exist, the plugin does nothing.
 
 ## Install
 
@@ -38,38 +38,60 @@ opencode.json:
 
 ## Configuration
 
-Configuration is done through environment variables.
+Configuration is done through a JSON file at `~/.config/opencode/opencode-ntfy.json`.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENCODE_NTFY_TOPIC` | Yes | -- | The ntfy.sh topic to publish to. |
-| `OPENCODE_NTFY_SERVER` | No | `https://ntfy.sh` | The ntfy server URL. Set this to use a self-hosted instance. |
-| `OPENCODE_NTFY_TOKEN` | No | -- | Bearer token for authenticated topics. |
-| `OPENCODE_NTFY_PRIORITY` | No | `default` | Global notification priority. One of: `min`, `low`, `default`, `high`, `max`. |
-| `OPENCODE_NTFY_ICON_MODE` | No | `dark` | Icon variant to use: `light` or `dark`. Reflects whether the target device uses light or dark mode. |
-| `OPENCODE_NTFY_ICON_LIGHT` | No | -- | Custom icon URL override for light mode. Must be JPEG or PNG. |
-| `OPENCODE_NTFY_ICON_DARK` | No | -- | Custom icon URL override for dark mode. Must be JPEG or PNG. |
-| `OPENCODE_NTFY_COOLDOWN` | No | -- | ISO 8601 duration for notification cooldown (e.g., `PT30S`, `PT5M`). Suppresses duplicate notifications per event type within the cooldown period. |
-| `OPENCODE_NTFY_COOLDOWN_EDGE` | No | `leading` | Cooldown edge: `leading` sends immediately then suppresses, `trailing` waits for a quiet period before sending. |
-| `OPENCODE_NTFY_FETCH_TIMEOUT` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S`, `PT1M`). When set, the fetch call is aborted if the server does not respond in time. |
+You can reference the bundled JSON Schema for editor autocompletion and
+validation by adding a `$schema` property:
+
+```json
+{
+  "$schema": "node_modules/opencode-ntfy.sh/opencode-ntfy.schema.json",
+  "topic": "my-notifications"
+}
+```
+
+### Configuration Properties
+
+| Property | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `$schema` | `string` | No | -- | Path or URL to the JSON Schema for editor validation and autocompletion. |
+| `topic` | `string` | **Yes** | -- | The ntfy.sh topic to publish to. |
+| `server` | `string` | No | `https://ntfy.sh` | The ntfy server URL. Set this to use a self-hosted instance. |
+| `token` | `string` | No | -- | Bearer token for authenticated topics. |
+| `priority` | `string` | No | `default` | Global notification priority. One of: `min`, `low`, `default`, `high`, `max`. |
+| `iconMode` | `string` | No | `dark` | Icon variant to use: `light` or `dark`. Reflects whether the target device uses light or dark mode. |
+| `iconLight` | `string` | No | -- | Custom icon URL override for light mode. Must be JPEG or PNG. |
+| `iconDark` | `string` | No | -- | Custom icon URL override for dark mode. Must be JPEG or PNG. |
+| `cooldown` | `string` | No | -- | ISO 8601 duration for notification cooldown (e.g., `PT30S`, `PT5M`). Suppresses duplicate notifications per event type within the cooldown period. |
+| `cooldownEdge` | `string` | No | `leading` | Cooldown edge: `leading` sends immediately then suppresses, `trailing` waits for a quiet period before sending. |
+| `fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S`, `PT1M`). When set, the fetch call is aborted if the server does not respond in time. |
+| `events` | `object` | No | -- | Per-event custom command overrides (see [Custom Notification Commands](#custom-notification-commands)). |
 
 ### Custom Notification Commands
 
 Each notification field (title, message, tags, priority) can be customized
-per event by setting an environment variable containing a shell command. The
-command's stdout (trimmed) is used as the field value. If the command is not
-set or fails, the hardcoded default is used silently.
+per event by setting a shell command in the `events` section of the config
+file. The command's stdout (trimmed) is used as the field value. If the
+command is not set or fails, the hardcoded default is used silently.
 
-Before execution, template variables in the command string are substituted
-with their values. Unset variables are substituted with empty strings.
+Commands are executed via the Bun `$` shell provided by the OpenCode plugin
+input. Before execution, template variables in the command string are
+substituted with their values. Unset variables are substituted with empty
+strings.
 
-#### Per-Event Environment Variables
+#### Per-Event Command Fields
 
-| Event | Title | Message | Tags | Priority |
-|---|---|---|---|---|
-| `session.idle` | `OPENCODE_NTFY_SESSION_IDLE_TITLE_CMD` | `OPENCODE_NTFY_SESSION_IDLE_MESSAGE_CMD` | `OPENCODE_NTFY_SESSION_IDLE_TAGS_CMD` | `OPENCODE_NTFY_SESSION_IDLE_PRIORITY_CMD` |
-| `session.error` | `OPENCODE_NTFY_SESSION_ERROR_TITLE_CMD` | `OPENCODE_NTFY_SESSION_ERROR_MESSAGE_CMD` | `OPENCODE_NTFY_SESSION_ERROR_TAGS_CMD` | `OPENCODE_NTFY_SESSION_ERROR_PRIORITY_CMD` |
-| `permission.asked` | `OPENCODE_NTFY_PERMISSION_TITLE_CMD` | `OPENCODE_NTFY_PERMISSION_MESSAGE_CMD` | `OPENCODE_NTFY_PERMISSION_TAGS_CMD` | `OPENCODE_NTFY_PERMISSION_PRIORITY_CMD` |
+Per-event commands are specified in the `events` object of the config file,
+keyed by event type. Each event object supports the following optional fields:
+
+| Field | Description |
+|---|---|
+| `titleCmd` | Shell command whose stdout is used as the notification title. |
+| `messageCmd` | Shell command whose stdout is used as the notification message body. |
+| `tagsCmd` | Shell command whose stdout is used as the notification tags. |
+| `priorityCmd` | Shell command whose stdout is used as the notification priority. |
+
+The supported event keys are: `session.idle`, `session.error`, `permission.asked`.
 
 #### Template Variables
 
@@ -83,7 +105,7 @@ with their values. Unset variables are substituted with empty strings.
 
 #### Default Values
 
-When a custom command environment variable is not set, the following
+When a custom command field is not set in the config, the following
 POSIX-compliant defaults are used. These commands do not include a trailing
 newline.
 
@@ -116,15 +138,23 @@ Each event type has a default tag corresponding to an
 
 #### Example
 
-```sh
-# Custom title for idle notifications
-export OPENCODE_NTFY_SESSION_IDLE_TITLE_CMD='echo "${event} is done"'
-
-# Custom message with timestamp
-export OPENCODE_NTFY_SESSION_ERROR_MESSAGE_CMD='echo "Error at ${time}: ${error}"'
-
-# Override priority for permission requests
-export OPENCODE_NTFY_PERMISSION_PRIORITY_CMD='echo "high"'
+```json
+{
+  "$schema": "node_modules/opencode-ntfy.sh/opencode-ntfy.schema.json",
+  "topic": "my-notifications",
+  "events": {
+    "session.idle": {
+      "titleCmd": "printf \"%s\" \"${event} is done\"",
+      "messageCmd": "printf \"%s\" \"Finished at ${time}\""
+    },
+    "session.error": {
+      "messageCmd": "printf \"%s\" \"Error at ${time}: ${error}\""
+    },
+    "permission.asked": {
+      "priorityCmd": "printf \"%s\" \"high\""
+    }
+  }
+}
 ```
 
 ### Subscribing to notifications
@@ -141,27 +171,32 @@ To receive notifications, subscribe to your topic using any
 
 ### Example
 
-```sh
-export OPENCODE_NTFY_TOPIC="my-opencode-notifications"
-opencode
+Minimal configuration (`~/.config/opencode/opencode-ntfy.json`):
+
+```json
+{
+  "topic": "my-opencode-notifications"
+}
 ```
 
 With authentication and a self-hosted server:
 
-```sh
-export OPENCODE_NTFY_TOPIC="my-opencode-notifications"
-export OPENCODE_NTFY_SERVER="https://ntfy.example.com"
-export OPENCODE_NTFY_TOKEN="tk_mytoken"
-export OPENCODE_NTFY_PRIORITY="high"
-opencode
+```json
+{
+  "topic": "my-opencode-notifications",
+  "server": "https://ntfy.example.com",
+  "token": "tk_mytoken",
+  "priority": "high"
+}
 ```
 
 With rate limiting (suppress duplicate notifications within 30 seconds):
 
-```sh
-export OPENCODE_NTFY_TOPIC="my-opencode-notifications"
-export OPENCODE_NTFY_COOLDOWN="PT30S"
-opencode
+```json
+{
+  "topic": "my-opencode-notifications",
+  "cooldown": "PT30S"
+}
 ```
 
 ## Development

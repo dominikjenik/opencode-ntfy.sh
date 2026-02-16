@@ -200,3 +200,13 @@
 - [x] Add `opencode-ntfy.schema.json` to `package.json` `files` list
 - [x] Add tests for JSON Schema (existence, property coverage, package.json inclusion)
 - [x] Ensure all 95 tests pass, lint is clean, and package builds cleanly
+
+## Phase 24: Update README to Document JSON Config File
+
+- [x] Rewrite README.md to replace all environment variable documentation with JSON config file documentation
+  - Replace environment variable table with JSON config properties table
+  - Replace custom command env var docs with `events` object documentation
+  - Update examples to use JSON config file instead of `export` commands
+  - Update "plugin does nothing" note to reference missing config file instead of env var
+  - Document `$schema` property and JSON Schema reference
+  - Keep template variables, default values, subscribing, install, and development sections
