@@ -288,3 +288,39 @@ describe("loadConfig", () => {
     expect(config!.events).toBeUndefined();
   });
 });
+
+describe("JSON Schema", () => {
+  it("should have a valid JSON Schema file at opencode-ntfy.schema.json", () => {
+    const schemaPath = join(import.meta.dirname, "..", "opencode-ntfy.schema.json");
+    expect(actualFs.existsSync(schemaPath)).toBe(true);
+    const schema = JSON.parse(actualFs.readFileSync(schemaPath, "utf-8"));
+    expect(schema.$schema).toContain("json-schema.org");
+    expect(schema.type).toBe("object");
+    expect(schema.required).toContain("topic");
+    expect(schema.additionalProperties).toBe(false);
+  });
+
+  it("should define all config properties in the schema", () => {
+    const schemaPath = join(import.meta.dirname, "..", "opencode-ntfy.schema.json");
+    const schema = JSON.parse(actualFs.readFileSync(schemaPath, "utf-8"));
+    const properties = Object.keys(schema.properties);
+    expect(properties).toContain("$schema");
+    expect(properties).toContain("topic");
+    expect(properties).toContain("server");
+    expect(properties).toContain("token");
+    expect(properties).toContain("priority");
+    expect(properties).toContain("iconMode");
+    expect(properties).toContain("iconLight");
+    expect(properties).toContain("iconDark");
+    expect(properties).toContain("cooldown");
+    expect(properties).toContain("cooldownEdge");
+    expect(properties).toContain("fetchTimeout");
+    expect(properties).toContain("events");
+  });
+
+  it("should be listed in package.json files array", () => {
+    const pkgPath = join(import.meta.dirname, "..", "package.json");
+    const pkgContent = JSON.parse(actualFs.readFileSync(pkgPath, "utf-8"));
+    expect(pkgContent.files).toContain("opencode-ntfy.schema.json");
+  });
+});

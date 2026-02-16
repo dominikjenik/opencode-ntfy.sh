@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/lannuttia/opencode-ntfy.sh/main/opencode-ntfy.schema.json",
+  "title": "opencode-ntfy.sh Configuration",
+  "description": "Configuration file for the opencode-ntfy.sh plugin, which sends push notifications via ntfy.sh during OpenCode sessions.",
+  "type": "object",
+  "required": ["topic"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL to the JSON Schema for editor validation and autocompletion."
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The ntfy.sh topic to publish notifications to."
+    },
+    "server": {
+      "type": "string",
+      "default": "https://ntfy.sh",
+      "description": "The ntfy.sh server URL."
+    },
+    "token": {
+      "type": "string",
+      "description": "Bearer token for authentication with the ntfy.sh server."
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["min", "low", "default", "high", "max"],
+      "default": "default",
+      "description": "Global notification priority."
+    },
+    "iconMode": {
+      "type": "string",
+      "enum": ["light", "dark"],
+      "default": "dark",
+      "description": "Whether the target device uses light or dark mode. Determines which icon variant is used."
+    },
+    "iconLight": {
+      "type": "string",
+      "description": "Custom icon URL override for light mode. Must point to a JPEG or PNG image."
+    },
+    "iconDark": {
+      "type": "string",
+      "description": "Custom icon URL override for dark mode. Must point to a JPEG or PNG image."
+    },
+    "cooldown": {
+      "type": "string",
+      "pattern": "^P",
+      "description": "ISO 8601 duration for notification cooldown (e.g., 'PT30S', 'PT5M'). When set, duplicate notifications for the same event type are suppressed within the cooldown period."
+    },
+    "cooldownEdge": {
+      "type": "string",
+      "enum": ["leading", "trailing"],
+      "default": "leading",
+      "description": "Which edge of the cooldown window triggers the notification. 'leading' sends immediately and suppresses duplicates. 'trailing' waits for inactivity before sending."
+    },
+    "fetchTimeout": {
+      "type": "string",
+      "pattern": "^P",
+      "description": "ISO 8601 duration for the HTTP request timeout when calling the ntfy.sh server (e.g., 'PT10S' for 10 seconds)."
+    },
+    "events": {
+      "type": "object",
+      "description": "Per-event custom command overrides for notification fields.",
+      "additionalProperties": false,
+      "properties": {
+        "session.idle": {
+          "$ref": "#/$defs/eventCommands"
+        },
+        "session.error": {
+          "$ref": "#/$defs/eventCommands"
+        },
+        "permission.asked": {
+          "$ref": "#/$defs/eventCommands"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "eventCommands": {
+      "type": "object",
+      "description": "Custom shell commands whose stdout is used for notification fields.",
+      "additionalProperties": false,
+      "properties": {
+        "titleCmd": {
+          "type": "string",
+          "description": "Shell command whose stdout is used as the notification title."
+        },
+        "messageCmd": {
+          "type": "string",
+          "description": "Shell command whose stdout is used as the notification message body."
+        },
+        "tagsCmd": {
+          "type": "string",
+          "description": "Shell command whose stdout is used as the notification tags."
+        },
+        "priorityCmd": {
+          "type": "string",
+          "description": "Shell command whose stdout is used as the notification priority."
+        }
+      }
+    }
+  }
+}
