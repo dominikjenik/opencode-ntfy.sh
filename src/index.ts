@@ -51,6 +51,25 @@ function hasPermissionProperties(
   return typeof event.properties === "object" && event.properties !== null;
 }
 
+async function isSubagentSession(
+  client: PluginInput["client"],
+  sessionID: string | undefined
+): Promise<boolean> {
+  if (!sessionID) {
+    return false;
+  }
+  try {
+    const result = await client.session.get({ path: { id: sessionID } });
+    if (result.data && result.data.parentID) {
+      return true;
+    }
+    return false;
+  } catch {
+    // If session lookup fails, fall through and allow the notification
+    return false;
+  }
+}
+
 export const plugin: Plugin = async (input: PluginInput): Promise<Hooks> => {
   const config = loadConfig();
 
@@ -59,6 +78,7 @@ export const plugin: Plugin = async (input: PluginInput): Promise<Hooks> => {
   }
 
   const $ = input.$;
+  const client = input.client;
 
   const cooldownGuard = config.cooldown
     ? createCooldownGuard({ cooldown: config.cooldown, edge: config.cooldownEdge })
@@ -75,6 +95,9 @@ export const plugin: Plugin = async (input: PluginInput): Promise<Hooks> => {
       const eventCommands = config.events?.[eventType];
 
       if (event.type === "session.idle") {
+        if (await isSubagentSession(client, event.properties.sessionID)) {
+          return;
+        }
         const time = new Date().toISOString();
         const vars = buildVars("session.idle", time);
 

@@ -525,6 +525,45 @@ describe("plugin", () => {
     );
   });
 
+  describe("subagent suppression", () => {
+    it("should suppress session.idle from child sessions (parentID is set)", async () => {
+      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
+      server.use(captureHandler("https://ntfy.example.com/test-topic"));
+
+      const mockClient = {
+        session: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              id: "child-session",
+              parentID: "parent-session",
+              projectID: "proj-1",
+              directory: "/home/user/my-project",
+              title: "Child Session",
+              version: "1",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+            error: undefined,
+          }),
+        },
+      };
+
+      // @ts-expect-error - mock client for testing
+      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+
+      await hooks.event!({
+        event: {
+          type: "session.idle",
+          properties: { sessionID: "child-session" },
+        },
+      });
+
+      expect(getCapturedRequest()).toBeNull();
+      expect(mockClient.session.get).toHaveBeenCalledWith({
+        path: { id: "child-session" },
+      });
+    });
+  });
+
   it("should not include a permission.ask hook (spec only uses event hook)", async () => {
     await mockConfigFile({ topic: "test-topic" });
 
