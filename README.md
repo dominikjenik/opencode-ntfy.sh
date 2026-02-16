@@ -21,6 +21,17 @@ The plugin sends notifications for three events:
 - **Permission Asked** -- The agent needs permission to perform an action.
   Includes the project name, timestamp, permission type, and patterns.
 
+### Subagent Suppression
+
+`session.idle` and `session.error` notifications from subagent (child) sessions
+are automatically suppressed. When a subagent finishes or errors, control
+returns to the parent agent, so there is nothing for the user to act on.
+`permission.asked` events are never suppressed, since the user must respond
+regardless of which agent requested permission.
+
+If the session lookup fails (e.g., due to a network error), the notification
+is sent anyway to avoid silently dropping notifications.
+
 If the config file does not exist, the plugin does nothing.
 
 ## Install

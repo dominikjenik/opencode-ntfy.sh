@@ -33,6 +33,7 @@ If there is a discrepancy between PLAN.md and this prompt, always update PLAN.md
   - `session.idle` -- when the agent finishes and is waiting for input
   - `session.error` -- when a session encounters an error
   - `permission.asked` -- when the agent needs permission to perform an action
+- **Subagent suppression:** `session.idle` and `session.error` events from subagent (child) sessions must be silently suppressed. When a subagent completes or errors, control returns to the parent agent, so there is nothing for the user to act on. The plugin must use the `client` from the plugin input to call `client.session.get()` with the session ID from the event's properties to determine whether the session has a `parentID`. If it does, the event is from a subagent and no notification is sent. If the session lookup fails (e.g., network error, missing session), the plugin must fall through and send the notification anyway to avoid silently dropping notifications due to transient failures.
 - Default notifications must include:
   - The event type
   - The project name (derived from the working directory)

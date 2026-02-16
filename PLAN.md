@@ -210,3 +210,15 @@
   - Update "plugin does nothing" note to reference missing config file instead of env var
   - Document `$schema` property and JSON Schema reference
   - Keep template variables, default values, subscribing, install, and development sections
+
+## Phase 25: Subagent Suppression
+
+- [x] Implement `isSubagentSession()` helper in `src/index.ts` that uses `client.session.get()` to check for `parentID`
+- [x] Suppress `session.idle` notifications from child sessions (parentID is set)
+- [x] Suppress `session.error` notifications from child sessions (parentID is set)
+- [x] Fall through and send notification when session lookup fails (error handling)
+- [x] Verify `permission.asked` events are NOT subject to subagent suppression
+- [x] Write tests for all subagent suppression scenarios (child suppressed, parent allowed, lookup failure, permission.asked unaffected)
+- [x] Extract `createMockClient` test helper to reduce test duplication
+- [x] Update PLAN.md and README.md
+- [x] Ensure all 100 tests pass, lint is clean, and package builds cleanly
