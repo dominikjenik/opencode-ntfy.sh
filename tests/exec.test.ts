@@ -1,6 +1,21 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { resolveField } from "../src/exec.js";
 import { createMockShell } from "./mock-shell.js";
+
+/**
+ * Creates a mock shell handler that captures the command string it was called with.
+ * Returns the captured calls array for assertions.
+ */
+function createCapturingHandler(
+  response: (command: string) => { stdout: string; exitCode: number }
+) {
+  const calls: string[] = [];
+  const handler = (command: string) => {
+    calls.push(command);
+    return response(command);
+  };
+  return { handler, calls };
+}
 
 describe("resolveField", () => {
   it("should return the fallback when command is undefined", async () => {
@@ -16,7 +31,10 @@ describe("resolveField", () => {
   });
 
   it("should substitute template variables and return trimmed stdout", async () => {
-    const handler = vi.fn(() => ({ stdout: "  custom title  \n", exitCode: 0 }));
+    const { handler, calls } = createCapturingHandler(() => ({
+      stdout: "  custom title  \n",
+      exitCode: 0,
+    }));
     const $ = createMockShell(handler);
 
     const result = await resolveField(
@@ -26,12 +44,17 @@ describe("resolveField", () => {
       "fallback"
     );
 
-    expect(handler).toHaveBeenCalledWith('echo "session.idle - 2026-01-01T00:00:00Z"');
+    expect(calls).toEqual([
+      'echo "session.idle - 2026-01-01T00:00:00Z"',
+    ]);
     expect(result).toBe("custom title");
   });
 
   it("should substitute unset variables with empty strings", async () => {
-    const handler = vi.fn(() => ({ stdout: "result", exitCode: 0 }));
+    const { handler, calls } = createCapturingHandler(() => ({
+      stdout: "result",
+      exitCode: 0,
+    }));
     const $ = createMockShell(handler);
 
     const result = await resolveField(
@@ -41,12 +64,15 @@ describe("resolveField", () => {
       "fallback"
     );
 
-    expect(handler).toHaveBeenCalledWith('echo "session.idle "');
+    expect(calls).toEqual(['echo "session.idle "']);
     expect(result).toBe("result");
   });
 
   it("should substitute underscored variable names like ${permission_type}", async () => {
-    const handler = vi.fn(() => ({ stdout: "file.write: config.json", exitCode: 0 }));
+    const { handler, calls } = createCapturingHandler(() => ({
+      stdout: "file.write: config.json",
+      exitCode: 0,
+    }));
     const $ = createMockShell(handler);
 
     const result = await resolveField(
@@ -56,7 +82,7 @@ describe("resolveField", () => {
       "fallback"
     );
 
-    expect(handler).toHaveBeenCalledWith('echo "file.write: config.json"');
+    expect(calls).toEqual(['echo "file.write: config.json"']);
     expect(result).toBe("file.write: config.json");
   });
 

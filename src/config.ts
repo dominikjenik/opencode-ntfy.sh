@@ -1,6 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync as nodeExistsSync,
+  readFileSync as nodeReadFileSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir as nodeHomedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { parse, toSeconds } from "iso8601-duration";
 
@@ -21,6 +24,18 @@ export interface NtfyConfig {
   events?: Record<string, EventCommands>;
 }
 
+export interface ConfigDeps {
+  homedir: () => string;
+  existsSync: (path: string) => boolean;
+  readConfigFile: (path: string) => string;
+}
+
+const defaultDeps: ConfigDeps = {
+  homedir: nodeHomedir,
+  existsSync: (path) => nodeExistsSync(path),
+  readConfigFile: (path) => nodeReadFileSync(path, "utf-8"),
+};
+
 function parseISO8601Duration(duration: string): number {
   try {
     const parsed = parse(duration);
@@ -34,10 +49,9 @@ function parseISO8601Duration(duration: string): number {
 
 const VALID_PRIORITIES = ["min", "low", "default", "high", "max"] as const;
 
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
-  readFileSync(join(__dirname, "..", "package.json"), "utf-8")
+  nodeReadFileSync(join(__dirname, "..", "package.json"), "utf-8")
 );
 const PACKAGE_VERSION: string = pkg.version;
 
@@ -58,8 +72,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseJsonFile(filePath: string): unknown {
-  const raw = readFileSync(filePath, "utf-8");
+function parseJsonFile(
+  filePath: string,
+  readConfigFile: ConfigDeps["readConfigFile"]
+): unknown {
+  const raw = readConfigFile(filePath);
   try {
     return JSON.parse(raw);
   } catch {
@@ -67,14 +84,15 @@ function parseJsonFile(filePath: string): unknown {
   }
 }
 
-export function loadConfig(): NtfyConfig | undefined {
+export function loadConfig(deps?: ConfigDeps): NtfyConfig | undefined {
+  const { homedir, existsSync, readConfigFile } = deps ?? defaultDeps;
   const configPath = join(homedir(), ".config", "opencode", "opencode-ntfy.json");
 
   if (!existsSync(configPath)) {
     return undefined;
   }
 
-  const parsed = parseJsonFile(configPath);
+  const parsed = parseJsonFile(configPath, readConfigFile);
 
   if (!isRecord(parsed)) {
     throw new Error(`Config file ${configPath} must contain a JSON object`);

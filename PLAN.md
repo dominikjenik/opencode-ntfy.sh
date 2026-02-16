@@ -240,3 +240,14 @@
 - [x] Remove cooldown documentation from `README.md`
 - [x] Update `PLAN.md` to match spec (remove stale cooldown references from earlier phases)
 - [x] Ensure all tests pass, lint is clean, and package builds cleanly
+
+## Phase 28: Eliminate Prohibited Test Doubles
+
+- [x] Refactor `loadConfig()` in `src/config.ts` to accept an optional `ConfigDeps` parameter for dependency injection (homedir, existsSync, readConfigFile)
+- [x] Refactor `src/index.ts` to export a `createPlugin(pluginDeps?)` factory function that accepts an injectable `loadConfig`; keep `plugin` and `default` exports as the default-deps version
+- [x] Rewrite `tests/config.test.ts` — replace `vi.mock("node:fs")`, `vi.mock("node:os")`, `vi.fn()`, `vi.mocked()` with plain `ConfigDeps` objects injected via function parameters
+- [x] Rewrite `tests/plugin.test.ts` — replace `vi.mock("node:fs")`, `vi.mock("node:os")`, `vi.fn()`, `vi.mocked()` with `createPlugin({ loadConfig })` using fake config loaders and plain call-capturing objects for mock client
+- [x] Rewrite `tests/notify.test.ts` — replace `vi.spyOn(globalThis, "fetch")` timeout tests with MSW `delay()`-based behavioral tests (verify abort on timeout, success without timeout)
+- [x] Rewrite `tests/exec.test.ts` — replace `vi.fn()` with plain call-capturing handler functions
+- [x] Ensure no test file imports `vi` from vitest (only `describe`, `it`, `expect`, lifecycle hooks)
+- [x] Ensure all 70 tests pass, lint is clean, and package builds cleanly

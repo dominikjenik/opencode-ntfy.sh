@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
-import { join } from "node:path";
 import {
   server,
   captureHandler,
@@ -8,64 +7,72 @@ import {
   resetCapturedRequest,
 } from "./msw-helpers.js";
 import { createMockShell } from "./mock-shell.js";
-
-const CONFIG_PATH = join("/mock-home", ".config", "opencode", "opencode-ntfy.json");
-
-// We need to mock fs and os before importing the module under test
-vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>();
-  return {
-    ...actual,
-    existsSync: vi.fn(actual.existsSync),
-    readFileSync: vi.fn(actual.readFileSync),
-  };
-});
-
-vi.mock("node:os", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:os")>();
-  return {
-    ...actual,
-    homedir: vi.fn(() => "/mock-home"),
-  };
-});
-
-// Pre-load actual fs for delegation in mocks
-const actualFs = await vi.importActual<typeof import("node:fs")>("node:fs");
+import { createPlugin } from "../src/index.js";
+import type { NtfyConfig } from "../src/config.js";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-beforeEach(async () => {
-  const os = await import("node:os");
-  vi.mocked(os.homedir).mockReturnValue("/mock-home");
-});
 afterEach(() => {
   resetCapturedRequest();
   server.resetHandlers();
-  vi.restoreAllMocks();
 });
 afterAll(() => server.close());
 
-async function mockConfigFile(config: Record<string, unknown>): Promise<void> {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  vi.mocked(os.homedir).mockReturnValue("/mock-home");
-  vi.mocked(fs.existsSync).mockImplementation((p) => {
-    if (String(p) === CONFIG_PATH) return true;
-    return actualFs.existsSync(p);
-  });
-  vi.mocked(fs.readFileSync).mockImplementation((p, options) => {
-    if (String(p) === CONFIG_PATH) return JSON.stringify(config);
-    return actualFs.readFileSync(p, options);
-  });
+function fakeLoadConfig(config: NtfyConfig | undefined) {
+  return () => config;
 }
 
-async function mockNoConfigFile(): Promise<void> {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  vi.mocked(os.homedir).mockReturnValue("/mock-home");
-  vi.mocked(fs.existsSync).mockImplementation((p) => {
-    if (String(p) === CONFIG_PATH) return false;
-    return actualFs.existsSync(p);
-  });
+function buildConfig(overrides: Partial<NtfyConfig> = {}): NtfyConfig {
+  return {
+    topic: "test-topic",
+    server: "https://ntfy.sh",
+    priority: "default",
+    iconUrl: "https://example.com/icon.png",
+    ...overrides,
+  };
+}
+
+/**
+ * Creates a mock client whose session.get() returns the given session data.
+ * Uses a plain function with a captured calls array instead of vi.fn().
+ */
+function createMockClient(sessionData: { parentID?: string } = {}) {
+  const calls: Array<{ path: { id: string } }> = [];
+  return {
+    calls,
+    session: {
+      get: (arg: { path: { id: string } }) => {
+        calls.push(arg);
+        return Promise.resolve({
+          data: {
+            id: "test-session",
+            projectID: "proj-1",
+            directory: "/home/user/my-project",
+            title: "Test Session",
+            version: "1",
+            time: { created: Date.now(), updated: Date.now() },
+            ...sessionData,
+          },
+          error: undefined,
+        });
+      },
+    },
+  };
+}
+
+/**
+ * Creates a mock client whose session.get() rejects with an error.
+ */
+function createFailingMockClient() {
+  const calls: Array<{ path: { id: string } }> = [];
+  return {
+    calls,
+    session: {
+      get: (arg: { path: { id: string } }) => {
+        calls.push(arg);
+        return Promise.reject(new Error("Network error"));
+      },
+    },
+  };
 }
 
 function createMockInput(
@@ -84,29 +91,6 @@ function createMockInput(
     serverUrl: new URL("http://localhost:3000"),
     $: createMockShell(),
     ...overrides,
-  };
-}
-
-/**
- * Creates a mock client whose session.get() returns the given session data.
- * Useful for testing subagent suppression behavior.
- */
-function createMockClient(sessionData: { parentID?: string } = {}) {
-  return {
-    session: {
-      get: vi.fn().mockResolvedValue({
-        data: {
-          id: "test-session",
-          projectID: "proj-1",
-          directory: "/home/user/my-project",
-          title: "Test Session",
-          version: "1",
-          time: { created: Date.now(), updated: Date.now() },
-          ...sessionData,
-        },
-        error: undefined,
-      }),
-    },
   };
 }
 
@@ -131,11 +115,11 @@ describe("plugin", () => {
   });
 
   it("should be an async function that returns hooks with an event handler", async () => {
-    await mockConfigFile({ topic: "test-topic" });
     server.use(captureHandler("https://ntfy.sh/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(buildConfig()),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     expect(hooks).toBeDefined();
     expect(hooks.event).toBeDefined();
@@ -143,11 +127,13 @@ describe("plugin", () => {
   });
 
   it("should send a notification when a session.idle event is received", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -157,17 +143,21 @@ describe("plugin", () => {
     });
 
     expect(getCapturedRequest()).not.toBeNull();
-    expect(getCapturedRequest()!.url).toBe("https://ntfy.example.com/test-topic");
+    expect(getCapturedRequest()!.url).toBe(
+      "https://ntfy.example.com/test-topic"
+    );
     expect(getCapturedRequest()!.method).toBe("POST");
     expect(getCapturedRequest()!.headers.get("Title")).toBe("Agent Idle");
   });
 
   it("should send a notification with error message when a session.error event is received", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -183,25 +173,27 @@ describe("plugin", () => {
     });
 
     expect(getCapturedRequest()).not.toBeNull();
-    expect(getCapturedRequest()!.url).toBe("https://ntfy.example.com/test-topic");
+    expect(getCapturedRequest()!.url).toBe(
+      "https://ntfy.example.com/test-topic"
+    );
     expect(getCapturedRequest()!.method).toBe("POST");
     expect(getCapturedRequest()!.headers.get("Title")).toBe("Agent Error");
   });
 
   it("should return empty hooks when config file does not exist", async () => {
-    await mockNoConfigFile();
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(undefined),
+    });
+    const hooks = await pluginFn(createMockInput());
     expect(hooks.event).toBeUndefined();
   });
 
   it("should not send a notification for non-session events", async () => {
-    await mockConfigFile({ topic: "test-topic" });
     server.use(captureHandler("https://ntfy.sh/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(buildConfig()),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await fireEvent(hooks, {
       type: "message.updated",
@@ -212,11 +204,13 @@ describe("plugin", () => {
   });
 
   it("should send a notification when a permission.asked event is received via the event hook", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await fireEvent(hooks, {
       type: "permission.asked",
@@ -231,7 +225,9 @@ describe("plugin", () => {
     });
 
     expect(getCapturedRequest()).not.toBeNull();
-    expect(getCapturedRequest()!.url).toBe("https://ntfy.example.com/test-topic");
+    expect(getCapturedRequest()!.url).toBe(
+      "https://ntfy.example.com/test-topic"
+    );
     expect(getCapturedRequest()!.method).toBe("POST");
     expect(getCapturedRequest()!.headers.get("Title")).toBe("Permission Asked");
   });
@@ -242,17 +238,7 @@ describe("plugin", () => {
   });
 
   it("should use custom title command for session.idle from events config", async () => {
-    await mockConfigFile({
-      topic: "test-topic",
-      server: "https://ntfy.example.com",
-      events: {
-        "session.idle": {
-          titleCmd: 'echo "Custom Idle Title"',
-        },
-      },
-    });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
     const mock$ = createMockShell((cmd) => {
       if (cmd === 'echo "Custom Idle Title"') {
         return { stdout: "Custom Idle Title", exitCode: 0 };
@@ -260,8 +246,19 @@ describe("plugin", () => {
       return { stdout: "", exitCode: 1 };
     });
 
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput({ $: mock$ }));
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          events: {
+            "session.idle": {
+              titleCmd: 'echo "Custom Idle Title"',
+            },
+          },
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput({ $: mock$ }));
 
     await hooks.event!({
       event: {
@@ -271,21 +268,13 @@ describe("plugin", () => {
     });
 
     expect(getCapturedRequest()).not.toBeNull();
-    expect(getCapturedRequest()!.headers.get("Title")).toBe("Custom Idle Title");
+    expect(getCapturedRequest()!.headers.get("Title")).toBe(
+      "Custom Idle Title"
+    );
   });
 
   it("should use custom priority command for session.error from events config", async () => {
-    await mockConfigFile({
-      topic: "test-topic",
-      server: "https://ntfy.example.com",
-      events: {
-        "session.error": {
-          priorityCmd: "echo max",
-        },
-      },
-    });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
     const mock$ = createMockShell((cmd) => {
       if (cmd === "echo max") {
         return { stdout: "max", exitCode: 0 };
@@ -293,8 +282,19 @@ describe("plugin", () => {
       return { stdout: "", exitCode: 1 };
     });
 
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput({ $: mock$ }));
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          events: {
+            "session.error": {
+              priorityCmd: "echo max",
+            },
+          },
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput({ $: mock$ }));
 
     await hooks.event!({
       event: {
@@ -314,17 +314,7 @@ describe("plugin", () => {
   });
 
   it("should substitute template variables in custom commands using underscored names", async () => {
-    await mockConfigFile({
-      topic: "test-topic",
-      server: "https://ntfy.example.com",
-      events: {
-        "session.idle": {
-          titleCmd: 'echo "${event} is done"',
-        },
-      },
-    });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
     const mock$ = createMockShell((cmd) => {
       if (cmd === 'echo "session.idle is done"') {
         return { stdout: "session.idle is done", exitCode: 0 };
@@ -332,8 +322,19 @@ describe("plugin", () => {
       return { stdout: "", exitCode: 1 };
     });
 
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput({ $: mock$ }));
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          events: {
+            "session.idle": {
+              titleCmd: 'echo "${event} is done"',
+            },
+          },
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput({ $: mock$ }));
 
     await hooks.event!({
       event: {
@@ -343,15 +344,23 @@ describe("plugin", () => {
     });
 
     expect(getCapturedRequest()).not.toBeNull();
-    expect(getCapturedRequest()!.headers.get("Title")).toBe("session.idle is done");
+    expect(getCapturedRequest()!.headers.get("Title")).toBe(
+      "session.idle is done"
+    );
   });
 
-  it("should include X-Icon header with default dark icon URL in session.idle notification", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
+  it("should include X-Icon header with the configured icon URL in session.idle notification", async () => {
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          iconUrl:
+            "https://raw.githubusercontent.com/lannuttia/opencode-ntfy.sh/v0.0.0/assets/opencode-icon-dark.png",
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -367,12 +376,18 @@ describe("plugin", () => {
     expect(iconHeader).toContain("raw.githubusercontent.com");
   });
 
-  it("should include X-Icon header with light icon URL when icon.mode is light", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com", icon: { mode: "light" } });
+  it("should include X-Icon header with light icon URL when icon config resolves to light", async () => {
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          iconUrl:
+            "https://raw.githubusercontent.com/lannuttia/opencode-ntfy.sh/v0.0.0/assets/opencode-icon-light.png",
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -389,11 +404,13 @@ describe("plugin", () => {
   });
 
   it("should use default title 'Agent Idle' for session.idle events", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -407,11 +424,13 @@ describe("plugin", () => {
   });
 
   it("should use default title 'Agent Error' for session.error events", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -431,11 +450,13 @@ describe("plugin", () => {
   });
 
   it("should use default title 'Permission Asked' for permission.asked events", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await fireEvent(hooks, {
       type: "permission.asked",
@@ -454,11 +475,13 @@ describe("plugin", () => {
   });
 
   it("should use default message for session.idle per spec", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -474,11 +497,13 @@ describe("plugin", () => {
   });
 
   it("should use default message for session.error per spec", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -500,11 +525,13 @@ describe("plugin", () => {
   });
 
   it("should use default message for permission.asked per spec", async () => {
-    await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({ server: "https://ntfy.example.com" })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await fireEvent(hooks, {
       type: "permission.asked",
@@ -524,16 +551,17 @@ describe("plugin", () => {
     );
   });
 
-  it("should use custom icon URL from icon.variant.dark config when mode is dark", async () => {
-    await mockConfigFile({
-      topic: "test-topic",
-      server: "https://ntfy.example.com",
-      icon: { variant: { dark: "https://example.com/custom-dark.png" } },
-    });
+  it("should use custom icon URL from config", async () => {
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          iconUrl: "https://example.com/custom-dark.png",
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput());
 
     await hooks.event!({
       event: {
@@ -550,13 +578,16 @@ describe("plugin", () => {
 
   describe("subagent suppression", () => {
     it("should suppress session.idle from child sessions (parentID is set)", async () => {
-      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
       server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
       const mockClient = createMockClient({ parentID: "parent-session" });
 
+      const pluginFn = createPlugin({
+        loadConfig: fakeLoadConfig(
+          buildConfig({ server: "https://ntfy.example.com" })
+        ),
+      });
       // @ts-expect-error - mock client for testing
-      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+      const hooks = await pluginFn(createMockInput({ client: mockClient }));
 
       await hooks.event!({
         event: {
@@ -566,19 +597,23 @@ describe("plugin", () => {
       });
 
       expect(getCapturedRequest()).toBeNull();
-      expect(mockClient.session.get).toHaveBeenCalledWith({
+      expect(mockClient.calls).toHaveLength(1);
+      expect(mockClient.calls[0]).toEqual({
         path: { id: "child-session" },
       });
     });
 
     it("should suppress session.error from child sessions (parentID is set)", async () => {
-      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
       server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
       const mockClient = createMockClient({ parentID: "parent-session" });
 
+      const pluginFn = createPlugin({
+        loadConfig: fakeLoadConfig(
+          buildConfig({ server: "https://ntfy.example.com" })
+        ),
+      });
       // @ts-expect-error - mock client for testing
-      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+      const hooks = await pluginFn(createMockInput({ client: mockClient }));
 
       await hooks.event!({
         event: {
@@ -594,19 +629,23 @@ describe("plugin", () => {
       });
 
       expect(getCapturedRequest()).toBeNull();
-      expect(mockClient.session.get).toHaveBeenCalledWith({
+      expect(mockClient.calls).toHaveLength(1);
+      expect(mockClient.calls[0]).toEqual({
         path: { id: "child-session" },
       });
     });
 
     it("should send session.idle notification for parent sessions (no parentID)", async () => {
-      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
       server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
       const mockClient = createMockClient();
 
+      const pluginFn = createPlugin({
+        loadConfig: fakeLoadConfig(
+          buildConfig({ server: "https://ntfy.example.com" })
+        ),
+      });
       // @ts-expect-error - mock client for testing
-      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+      const hooks = await pluginFn(createMockInput({ client: mockClient }));
 
       await hooks.event!({
         event: {
@@ -617,23 +656,23 @@ describe("plugin", () => {
 
       expect(getCapturedRequest()).not.toBeNull();
       expect(getCapturedRequest()!.headers.get("Title")).toBe("Agent Idle");
-      expect(mockClient.session.get).toHaveBeenCalledWith({
+      expect(mockClient.calls).toHaveLength(1);
+      expect(mockClient.calls[0]).toEqual({
         path: { id: "parent-session" },
       });
     });
 
     it("should send notification when session lookup fails (fall through on error)", async () => {
-      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
       server.use(captureHandler("https://ntfy.example.com/test-topic"));
+      const mockClient = createFailingMockClient();
 
-      const mockClient = {
-        session: {
-          get: vi.fn().mockRejectedValue(new Error("Network error")),
-        },
-      };
-
+      const pluginFn = createPlugin({
+        loadConfig: fakeLoadConfig(
+          buildConfig({ server: "https://ntfy.example.com" })
+        ),
+      });
       // @ts-expect-error - mock client for testing
-      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+      const hooks = await pluginFn(createMockInput({ client: mockClient }));
 
       await hooks.event!({
         event: {
@@ -644,19 +683,23 @@ describe("plugin", () => {
 
       expect(getCapturedRequest()).not.toBeNull();
       expect(getCapturedRequest()!.headers.get("Title")).toBe("Agent Idle");
-      expect(mockClient.session.get).toHaveBeenCalledWith({
+      expect(mockClient.calls).toHaveLength(1);
+      expect(mockClient.calls[0]).toEqual({
         path: { id: "some-session" },
       });
     });
 
     it("should NOT suppress permission.asked events from subagent sessions", async () => {
-      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
       server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
       const mockClient = createMockClient({ parentID: "parent-session" });
 
+      const pluginFn = createPlugin({
+        loadConfig: fakeLoadConfig(
+          buildConfig({ server: "https://ntfy.example.com" })
+        ),
+      });
       // @ts-expect-error - mock client for testing
-      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+      const hooks = await pluginFn(createMockInput({ client: mockClient }));
 
       await fireEvent(hooks, {
         type: "permission.asked",
@@ -671,30 +714,22 @@ describe("plugin", () => {
       });
 
       expect(getCapturedRequest()).not.toBeNull();
-      expect(getCapturedRequest()!.headers.get("Title")).toBe("Permission Asked");
+      expect(getCapturedRequest()!.headers.get("Title")).toBe(
+        "Permission Asked"
+      );
     });
   });
 
   it("should not include a permission.ask hook (spec only uses event hook)", async () => {
-    await mockConfigFile({ topic: "test-topic" });
-
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput());
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(buildConfig()),
+    });
+    const hooks = await pluginFn(createMockInput());
     expect(hooks["permission.ask"]).toBeUndefined();
   });
 
   it("should use custom commands for permission.asked event via event hook", async () => {
-    await mockConfigFile({
-      topic: "test-topic",
-      server: "https://ntfy.example.com",
-      events: {
-        "permission.asked": {
-          titleCmd: 'echo "Custom Permission"',
-        },
-      },
-    });
     server.use(captureHandler("https://ntfy.example.com/test-topic"));
-
     const mock$ = createMockShell((cmd) => {
       if (cmd === 'echo "Custom Permission"') {
         return { stdout: "Custom Permission", exitCode: 0 };
@@ -702,8 +737,19 @@ describe("plugin", () => {
       return { stdout: "", exitCode: 1 };
     });
 
-    const { plugin } = await import("../src/index.js");
-    const hooks = await plugin(createMockInput({ $: mock$ }));
+    const pluginFn = createPlugin({
+      loadConfig: fakeLoadConfig(
+        buildConfig({
+          server: "https://ntfy.example.com",
+          events: {
+            "permission.asked": {
+              titleCmd: 'echo "Custom Permission"',
+            },
+          },
+        })
+      ),
+    });
+    const hooks = await pluginFn(createMockInput({ $: mock$ }));
 
     await fireEvent(hooks, {
       type: "permission.asked",
@@ -718,7 +764,8 @@ describe("plugin", () => {
     });
 
     expect(getCapturedRequest()).not.toBeNull();
-    expect(getCapturedRequest()!.headers.get("Title")).toBe("Custom Permission");
+    expect(getCapturedRequest()!.headers.get("Title")).toBe(
+      "Custom Permission"
+    );
   });
-
 });

@@ -1,9 +1,22 @@
 import type { Plugin, PluginInput, Hooks } from "@opencode-ai/plugin";
-import { loadConfig, type NtfyConfig, type EventCommands } from "./config.js";
+import {
+  loadConfig as defaultLoadConfig,
+  type NtfyConfig,
+  type EventCommands,
+  type ConfigDeps,
+} from "./config.js";
 import { sendNotification } from "./notify.js";
 import { resolveField } from "./exec.js";
 
 type BunShell = PluginInput["$"];
+
+export interface PluginDeps {
+  loadConfig: (deps?: ConfigDeps) => NtfyConfig | undefined;
+}
+
+const defaultPluginDeps: PluginDeps = {
+  loadConfig: defaultLoadConfig,
+};
 
 interface NotificationDefaults {
   title: string;
@@ -69,68 +82,74 @@ async function isSubagentSession(
   }
 }
 
-export const plugin: Plugin = async (input: PluginInput): Promise<Hooks> => {
-  const config = loadConfig();
+export function createPlugin(pluginDeps?: PluginDeps): Plugin {
+  const { loadConfig } = pluginDeps ?? defaultPluginDeps;
 
-  if (!config) {
-    return {};
-  }
+  return async (input: PluginInput): Promise<Hooks> => {
+    const config = loadConfig();
 
-  const $ = input.$;
-  const client = input.client;
+    if (!config) {
+      return {};
+    }
 
-  return {
-    event: async ({ event }) => {
-      const eventType: string = event.type;
-      const eventCommands = config.events?.[eventType];
+    const $ = input.$;
+    const client = input.client;
 
-      if (event.type === "session.idle") {
-        if (await isSubagentSession(client, event.properties.sessionID)) {
-          return;
+    return {
+      event: async ({ event }) => {
+        const eventType: string = event.type;
+        const eventCommands = config.events?.[eventType];
+
+        if (event.type === "session.idle") {
+          if (await isSubagentSession(client, event.properties.sessionID)) {
+            return;
+          }
+          const time = new Date().toISOString();
+          const vars = buildVars("session.idle", time);
+
+          await resolveAndSend($, config, eventCommands, vars, {
+            title: "Agent Idle",
+            message: "The agent has finished and is waiting for input.",
+            tags: "hourglass_done",
+          });
+        } else if (event.type === "session.error") {
+          if (await isSubagentSession(client, event.properties.sessionID)) {
+            return;
+          }
+          const error = event.properties.error;
+          const errorMsg =
+            error && "data" in error && "message" in error.data
+              ? String(error.data.message)
+              : "";
+          const time = new Date().toISOString();
+          const vars = buildVars("session.error", time, { error: errorMsg });
+
+          await resolveAndSend($, config, eventCommands, vars, {
+            title: "Agent Error",
+            message: "An error has occurred. Check the session for details.",
+            tags: "warning",
+          });
+        } else if (eventType === "permission.asked" && hasPermissionProperties(event)) {
+          const permissionType = event.properties.permission || "";
+          const patternsArr = event.properties.patterns;
+          const patterns = Array.isArray(patternsArr) ? patternsArr.join(", ") : "";
+          const time = new Date().toISOString();
+          const vars = buildVars("permission.asked", time, {
+            permission_type: permissionType,
+            permission_patterns: patterns,
+          });
+
+          await resolveAndSend($, config, eventCommands, vars, {
+            title: "Permission Asked",
+            message: "The agent needs permission to continue. Review and respond.",
+            tags: "lock",
+          });
         }
-        const time = new Date().toISOString();
-        const vars = buildVars("session.idle", time);
-
-        await resolveAndSend($, config, eventCommands, vars, {
-          title: "Agent Idle",
-          message: "The agent has finished and is waiting for input.",
-          tags: "hourglass_done",
-        });
-      } else if (event.type === "session.error") {
-        if (await isSubagentSession(client, event.properties.sessionID)) {
-          return;
-        }
-        const error = event.properties.error;
-        const errorMsg =
-          error && "data" in error && "message" in error.data
-            ? String(error.data.message)
-            : "";
-        const time = new Date().toISOString();
-        const vars = buildVars("session.error", time, { error: errorMsg });
-
-        await resolveAndSend($, config, eventCommands, vars, {
-          title: "Agent Error",
-          message: "An error has occurred. Check the session for details.",
-          tags: "warning",
-        });
-      } else if (eventType === "permission.asked" && hasPermissionProperties(event)) {
-        const permissionType = event.properties.permission || "";
-        const patternsArr = event.properties.patterns;
-        const patterns = Array.isArray(patternsArr) ? patternsArr.join(", ") : "";
-        const time = new Date().toISOString();
-        const vars = buildVars("permission.asked", time, {
-          permission_type: permissionType,
-          permission_patterns: patterns,
-        });
-
-        await resolveAndSend($, config, eventCommands, vars, {
-          title: "Permission Asked",
-          message: "The agent needs permission to continue. Review and respond.",
-          tags: "lock",
-        });
-      }
-    },
+      },
+    };
   };
-};
+}
+
+export const plugin: Plugin = createPlugin();
 
 export default plugin;
