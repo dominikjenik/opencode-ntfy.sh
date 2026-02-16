@@ -107,6 +107,9 @@ export const plugin: Plugin = async (input: PluginInput): Promise<Hooks> => {
           tags: "hourglass_done",
         });
       } else if (event.type === "session.error") {
+        if (await isSubagentSession(client, event.properties.sessionID)) {
+          return;
+        }
         const error = event.properties.error;
         const errorMsg =
           error && "data" in error && "message" in error.data
