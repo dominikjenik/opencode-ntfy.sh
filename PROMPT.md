@@ -68,9 +68,11 @@ Users can reference the schema in their config file using the `$schema` property
 | `server` | `string` | No | `"https://ntfy.sh"` | The ntfy.sh server URL |
 | `token` | `string` | No | -- | Bearer token for authentication |
 | `priority` | `string` | No | `"default"` | Global notification priority (`min`, `low`, `default`, `high`, `max`) |
-| `iconMode` | `string` | No | `"dark"` | Whether the target device uses `light` or `dark` mode |
-| `iconLight` | `string` | No | -- | Custom icon URL override for light mode |
-| `iconDark` | `string` | No | -- | Custom icon URL override for dark mode |
+| `icon` | `object` | No | -- | Icon configuration object (see below) |
+| `icon.mode` | `string` | No | `"dark"` | Whether the target device uses `light` or `dark` mode |
+| `icon.variant` | `object` | No | -- | Custom icon URL overrides per mode variant |
+| `icon.variant.light` | `string` | No | -- | Custom icon URL override for light mode |
+| `icon.variant.dark` | `string` | No | -- | Custom icon URL override for dark mode |
 | `fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout when calling the ntfy.sh server (e.g., `PT10S` for 10 seconds, `PT1M` for 1 minute). The duration is parsed using `parseISO8601Duration()` (which delegates to a third-party ISO 8601 duration library). When set, the `fetch` call in `sendNotification` uses an `AbortSignal.timeout()` to enforce the timeout. When not set, no timeout is applied (the request uses the default `fetch` behavior). |
 | `events` | `object` | No | -- | Per-event custom command overrides (see [Custom Notification Commands](#custom-notification-commands)) |
 
@@ -82,7 +84,9 @@ Users can reference the schema in their config file using the `$schema` property
   "topic": "my-notifications",
   "server": "https://ntfy.sh",
   "priority": "default",
-  "iconMode": "dark",
+  "icon": {
+    "mode": "dark"
+  },
   "fetchTimeout": "PT10S",
   "events": {
     "session.idle": {
@@ -112,7 +116,7 @@ The JSON Schema file (`opencode-ntfy.schema.json`) must:
 
 - Be a valid JSON Schema (draft 2020-12 or later)
 - Define all configuration properties with their types, descriptions, defaults, and constraints
-- Use `enum` for fields with a fixed set of valid values (e.g., `priority`, `iconMode`)
+- Use `enum` for fields with a fixed set of valid values (e.g., `priority`, `icon.mode`)
 - Use `pattern` for fields with specific formats where appropriate
 - Mark `topic` as required
 - Include `additionalProperties: false` at the top level to catch typos
@@ -215,15 +219,17 @@ Default icon URLs are served from this repo's `assets/` directory via `raw.githu
 
 #### Icon Configuration
 
-- `iconMode` (optional, defaults to `"dark"`) -- determines which icon variant to use. Must be `"light"` or `"dark"`. If unset or set to any other value, defaults to `"dark"`. This setting reflects whether the target device receiving push notifications uses light or dark mode.
-- `iconLight` (optional) -- custom URL to use as the notification icon when `iconMode` is `"light"`. When set, this overrides the default light mode icon URL. Must point to a JPEG or PNG image.
-- `iconDark` (optional) -- custom URL to use as the notification icon when `iconMode` is `"dark"`. When set, this overrides the default dark mode icon URL. Must point to a JPEG or PNG image.
+- `icon` (optional) -- an object containing icon-related configuration.
+  - `icon.mode` (optional, defaults to `"dark"`) -- determines which icon variant to use. Must be `"light"` or `"dark"`. If unset or set to any other value, defaults to `"dark"`. This setting reflects whether the target device receiving push notifications uses light or dark mode.
+  - `icon.variant` (optional) -- an object containing custom icon URL overrides per mode variant.
+    - `icon.variant.light` (optional) -- custom URL to use as the notification icon when `icon.mode` is `"light"`. When set, this overrides the default light mode icon URL. Must point to a JPEG or PNG image.
+    - `icon.variant.dark` (optional) -- custom URL to use as the notification icon when `icon.mode` is `"dark"`. When set, this overrides the default dark mode icon URL. Must point to a JPEG or PNG image.
 
 The icon resolution logic is:
 
-1. Determine the mode from `iconMode` (default: `"dark"`).
-2. If the mode is `"light"` and `iconLight` is set, use that URL.
-3. If the mode is `"dark"` and `iconDark` is set, use that URL.
+1. Determine the mode from `icon.mode` (default: `"dark"`).
+2. If the mode is `"light"` and `icon.variant.light` is set, use that URL.
+3. If the mode is `"dark"` and `icon.variant.dark` is set, use that URL.
 4. Otherwise, use the default `raw.githubusercontent.com` PNG URL for the corresponding mode.
 
 ### Publishing via ntfy.sh

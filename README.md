@@ -70,9 +70,11 @@ validation by adding a `$schema` property:
 | `server` | `string` | No | `https://ntfy.sh` | The ntfy server URL. Set this to use a self-hosted instance. |
 | `token` | `string` | No | -- | Bearer token for authenticated topics. |
 | `priority` | `string` | No | `default` | Global notification priority. One of: `min`, `low`, `default`, `high`, `max`. |
-| `iconMode` | `string` | No | `dark` | Icon variant to use: `light` or `dark`. Reflects whether the target device uses light or dark mode. |
-| `iconLight` | `string` | No | -- | Custom icon URL override for light mode. Must be JPEG or PNG. |
-| `iconDark` | `string` | No | -- | Custom icon URL override for dark mode. Must be JPEG or PNG. |
+| `icon` | `object` | No | -- | Icon configuration object (see below). |
+| `icon.mode` | `string` | No | `dark` | Icon variant to use: `light` or `dark`. Reflects whether the target device uses light or dark mode. |
+| `icon.variant` | `object` | No | -- | Custom icon URL overrides per mode variant. |
+| `icon.variant.light` | `string` | No | -- | Custom icon URL override for light mode. Must be JPEG or PNG. |
+| `icon.variant.dark` | `string` | No | -- | Custom icon URL override for dark mode. Must be JPEG or PNG. |
 | `fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S`, `PT1M`). When set, the fetch call is aborted if the server does not respond in time. |
 | `events` | `object` | No | -- | Per-event custom command overrides (see [Custom Notification Commands](#custom-notification-commands)). |
 

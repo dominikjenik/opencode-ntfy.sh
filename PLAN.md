@@ -169,7 +169,16 @@
 - [x] Rewrite `parseISO8601Duration` to delegate to `iso8601-duration` (parse + toSeconds) instead of hand-rolled regex
 - [x] Ensure all tests pass, lint is clean, and package builds cleanly
 
-## Phase 22: Code Simplification Refactoring
+## Phase 27: Migrate Icon Config to Nested Object Structure
+
+- [x] Change icon config from flat properties (`iconMode`, `iconLight`, `iconDark`) to nested `icon` object (`icon.mode`, `icon.variant.light`, `icon.variant.dark`)
+- [x] Update `src/config.ts` `loadConfig()` to parse nested `icon` object from config file
+- [x] Update `opencode-ntfy.schema.json` to define `icon` as a nested object with `mode` and `variant` sub-properties
+- [x] Update `tests/config.test.ts` to use nested icon config in all icon-related tests
+- [x] Update `tests/plugin.test.ts` to use nested icon config
+- [x] Update schema property test to expect `icon` instead of `iconMode`/`iconLight`/`iconDark`
+- [x] Update `README.md` to document nested `icon` object configuration
+- [x] Ensure all 70 tests pass, lint is clean, and package builds cleanly
 
 - [x] Simplify `resolveIconUrl` in `src/config.ts`
 - [x] Simplify `buildVars` in `src/index.ts` — replace manual `Partial<Record<...>>` destructuring with `?? ""` defaults with a spread-based approach using `Record<string, string>`
