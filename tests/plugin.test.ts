@@ -598,6 +598,29 @@ describe("plugin", () => {
         path: { id: "child-session" },
       });
     });
+
+    it("should send session.idle notification for parent sessions (no parentID)", async () => {
+      await mockConfigFile({ topic: "test-topic", server: "https://ntfy.example.com" });
+      server.use(captureHandler("https://ntfy.example.com/test-topic"));
+
+      const mockClient = createMockClient();
+
+      // @ts-expect-error - mock client for testing
+      const hooks = await (await import("../src/index.js")).plugin(createMockInput({ client: mockClient }));
+
+      await hooks.event!({
+        event: {
+          type: "session.idle",
+          properties: { sessionID: "parent-session" },
+        },
+      });
+
+      expect(getCapturedRequest()).not.toBeNull();
+      expect(getCapturedRequest()!.headers.get("Title")).toBe("Agent Idle");
+      expect(mockClient.session.get).toHaveBeenCalledWith({
+        path: { id: "parent-session" },
+      });
+    });
   });
 
   it("should not include a permission.ask hook (spec only uses event hook)", async () => {
