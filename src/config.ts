@@ -24,8 +24,7 @@ export interface NtfyConfig {
 }
 
 const VALID_PRIORITIES = ["min", "low", "default", "high", "max"] as const;
-const VALID_ICON_MODES = ["light", "dark"] as const;
-const VALID_COOLDOWN_EDGES = ["leading", "trailing"] as const;
+
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -50,6 +49,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parseJsonFile(filePath: string): unknown {
+  const raw = readFileSync(filePath, "utf-8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`Failed to parse config file ${filePath}: invalid JSON`);
+  }
+}
+
 export function loadConfig(): NtfyConfig | undefined {
   const configPath = join(homedir(), ".config", "opencode", "opencode-ntfy.json");
 
@@ -57,13 +65,7 @@ export function loadConfig(): NtfyConfig | undefined {
     return undefined;
   }
 
-  const raw = readFileSync(configPath, "utf-8");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`Failed to parse config file ${configPath}: invalid JSON`);
-  }
+  const parsed = parseJsonFile(configPath);
 
   if (!isRecord(parsed)) {
     throw new Error(`Config file ${configPath} must contain a JSON object`);
@@ -91,7 +93,7 @@ export function loadConfig(): NtfyConfig | undefined {
 
   // Optional: iconMode
   const iconModeRaw = typeof parsed.iconMode === "string" ? parsed.iconMode : "dark";
-  const iconMode = VALID_ICON_MODES.some((m) => m === iconModeRaw) ? iconModeRaw : "dark";
+  const iconMode = (iconModeRaw === "light" || iconModeRaw === "dark") ? iconModeRaw : "dark";
 
   // Optional: iconLight, iconDark
   const iconLight = typeof parsed.iconLight === "string" ? parsed.iconLight : undefined;
@@ -107,9 +109,9 @@ export function loadConfig(): NtfyConfig | undefined {
 
   // Optional: cooldownEdge
   const cooldownEdgeRaw = typeof parsed.cooldownEdge === "string" ? parsed.cooldownEdge : "leading";
-  if (!VALID_COOLDOWN_EDGES.some((e) => e === cooldownEdgeRaw)) {
+  if (cooldownEdgeRaw !== "leading" && cooldownEdgeRaw !== "trailing") {
     throw new Error(
-      `Config 'cooldownEdge' must be one of: ${VALID_COOLDOWN_EDGES.join(", ")}`
+      "Config 'cooldownEdge' must be one of: leading, trailing"
     );
   }
   const cooldownEdge = cooldownEdgeRaw === "trailing" ? "trailing" : "leading";
