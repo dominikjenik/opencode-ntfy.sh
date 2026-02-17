@@ -194,21 +194,20 @@ To receive notifications, subscribe to your topic using any
 
 ### Prerequisites
 
-- Node.js (v20+)
-- npm
+- [Bun](https://bun.sh)
 
 ### Setup
 
 ```sh
 git clone https://github.com/lannuttia/opencode-ntfy.sh.git
 cd opencode-ntfy.sh
-npm install
+bun install
 ```
 
 ### Build
 
 ```sh
-npm run build
+bun run build
 ```
 
 This compiles TypeScript from `src/` to `dist/` via `tsc`.
@@ -216,13 +215,13 @@ This compiles TypeScript from `src/` to `dist/` via `tsc`.
 ### Test
 
 ```sh
-npm test
+bun run test
 ```
 
 Or in watch mode:
 
 ```sh
-npm run test:watch
+bun run test:watch
 ```
 
 ## License

@@ -283,3 +283,11 @@ Migrate the plugin to use `opencode-notification-sdk` as a runtime dependency. T
 
 - [x] Update `README.md` to document SDK-based architecture, new config file path (`notification-ntfy.json`), and new config structure
 - [x] Ensure all tests pass, lint is clean, and package builds cleanly
+
+## Phase 30: Migrate to Bun Runtime
+
+- [x] Rewrite `.github/workflows/ci.yml` to use Bun (`oven-sh/setup-bun`) instead of Node.js (`actions/setup-node`), removing the Node.js version matrix
+- [x] Update `package.json`: remove `engines.node`, update `prepublishOnly` to use `bun run build`
+- [x] Generate `bun.lock` and remove `package-lock.json`
+- [x] Update `README.md` development section to reference Bun instead of Node.js/npm
+- [x] Ensure all tests pass, lint is clean, and package builds cleanly

@@ -4,7 +4,7 @@ You are building an OpenCode notification backend plugin for ntfy.sh, built on t
 
 ## Goal
 
-Build a TypeScript OpenCode plugin (`opencode-ntfy.sh`) that delivers push notifications to a user's phone or desktop via the ntfy.sh service. This plugin is a **notification backend** for the [`opencode-notification-sdk`](https://www.npmjs.com/package/opencode-notification-sdk). The SDK handles all common notification logic (event routing, subagent suppression, shell command template resolution, default content). This project is responsible only for the ntfy.sh-specific concerns: formatting and sending the HTTP POST request, validating ntfy-specific configuration, and resolving the notification icon URL.
+Build a TypeScript OpenCode plugin (`opencode-ntfy.sh`) that delivers push notifications to a user's phone or desktop via the ntfy.sh service. This plugin is a **notification backend** for the [`opencode-notification-sdk`](https://www.npmjs.com/package/opencode-notification-sdk). The SDK handles common notification logic (event routing, subagent suppression) and provides content utilities for template rendering and shell command execution. This project is responsible for the ntfy.sh-specific concerns: producing notification content (title and message), formatting and sending the HTTP POST request, validating ntfy-specific configuration, and resolving the notification icon URL.
 
 ## Instructions
 
@@ -22,7 +22,7 @@ If there is a discrepancy between PLAN.md and this prompt, always update PLAN.md
 
 - **No type casting.** Never use `as`, `as any`, `as unknown`, or similar type assertions. If the types don't align, fix the type definitions or use type guards, generics, or proper type narrowing instead. This is enforced by ESLint via the `@typescript-eslint/consistent-type-assertions` rule with `assertionStyle: "never"`.
 - **Prefer constants.** Use `const` variables instead of `let` wherever the value is not reassigned. For object literals, arrays, and other compound values that should be deeply immutable, use `as const` assertions (const assertions) to narrow types to their literal values. This improves type safety, communicates intent, and prevents accidental mutation.
-- **Linting is required.** All source and test code must pass `npm run lint` before committing. The linter uses ESLint with typescript-eslint and is configured in `eslint.config.js`.
+- **Linting is required.** All source and test code must pass `bun run lint` before committing. The linter uses ESLint with typescript-eslint and is configured in `eslint.config.js`.
 - **Prefer immutability and pure functions.** Favor immutable data and pure functions over mutable state and side effects. Avoid mutating function arguments or shared state. When a function needs to produce a modified value, return a new value rather than mutating the input. Side effects (I/O, network calls, filesystem access) should be pushed to the edges of the system so that core logic remains pure and easy to test.
 - **No implementation-coupled test doubles.** Tests must not use mocks, spies, stubs, monkey-patching, or module patching that couple the test to the internal implementation of the unit under test. This includes -- but is not limited to -- `vi.mock()`, `vi.spyOn()`, `vi.fn()`, `vi.stubGlobal()`, and manual mock files. Design production code so that dependencies can be supplied directly (e.g., via function parameters or options objects) rather than requiring interception at the module or global level. Network-level interception libraries like MSW are permitted because they operate at the HTTP boundary without coupling tests to implementation details.
 
@@ -34,9 +34,8 @@ This plugin depends on `opencode-notification-sdk` as a runtime dependency. The 
 
 - **Event routing** -- classifying raw OpenCode events into notification types (`session.idle`, `session.error`, `permission.asked`)
 - **Subagent suppression** -- silently suppressing notifications from sub-agent (child) sessions for `session.idle` and `session.error` events
-- **Shell command templates** -- user-customizable notification titles and messages via shell commands with `{var_name}` substitution
-- **Default notification content** -- sensible default titles and messages for every event type
-- **Configuration loading** -- reading and parsing the config file, handling the `enabled`, `events`, and `templates` sections
+- **Content utilities** -- `renderTemplate()` for synchronous `{var_name}` placeholder substitution, `execCommand()` for running shell commands and returning stdout, and `execTemplate()` which combines both (renders variables into a command string, executes it, and returns stdout). These are exported from the SDK for backends to use when producing notification content.
+- **Configuration loading** -- reading and parsing the config file, handling the `enabled` and `events` sections. `getBackendConfig(config, backendName)` extracts the backend-specific configuration object (the second `backendName` argument is required).
 - **Plugin factory** -- `createNotificationPlugin()` wires everything together and returns a valid OpenCode `Plugin`
 
 This project implements the `NotificationBackend` interface from the SDK, which requires a single method:
@@ -47,14 +46,14 @@ interface NotificationBackend {
 }
 ```
 
-The SDK calls `send()` only after all filtering (event classification, enabled checks, subagent suppression) and content resolution (shell command templates or defaults) are complete. The `NotificationContext` passed to `send()` contains the resolved `event`, `title`, `message`, and `metadata`.
+The SDK calls `send()` only after all filtering (event classification, enabled checks, subagent suppression) is complete. The `NotificationContext` passed to `send()` contains the `event` and `metadata`. The SDK does not prescribe what fields a notification must contain (e.g., title, message) -- backends are responsible for deciding what content to produce and can use the SDK's content utilities (`renderTemplate`, `execCommand`, `execTemplate`) to do so.
 
 ### Plugin Behavior
 
-- The plugin must be installable via npm or by placing it in `.opencode/plugins/`.
+- The plugin must be installable from the npm registry (e.g., `bun add opencode-ntfy.sh`) or by placing it in `.opencode/plugins/`.
 - The plugin uses `createNotificationPlugin()` from the SDK with `backendConfigKey: "ntfy"` to create the OpenCode plugin.
-- The SDK handles all event routing, subagent suppression, and content resolution. This plugin does not implement any of that logic.
-- The plugin's sole responsibility is delivering the notification via the ntfy.sh HTTP API when the SDK calls `backend.send()`.
+- The SDK handles all event routing and subagent suppression. This plugin does not implement any of that logic.
+- The plugin is responsible for producing notification content (title and message) and delivering the notification via the ntfy.sh HTTP API when the SDK calls `backend.send()`. The plugin should use the SDK's content utilities (`renderTemplate`, `execCommand`, `execTemplate`) as needed to produce content.
 
 ### Configuration File
 
@@ -69,9 +68,6 @@ The config file follows the SDK's configuration schema at the top level, with nt
 | `enabled` | `boolean` | No | `true` | Global kill switch for all notifications (handled by SDK) |
 | `events` | `object` | No | (all enabled) | Per-event enable/disable toggles (handled by SDK) |
 | `events.<type>.enabled` | `boolean` | No | `true` | Whether this event type triggers notifications (handled by SDK) |
-| `templates` | `object \| null` | No | `null` | Per-event shell command templates (handled by SDK) |
-| `templates.<type>.titleCmd` | `string \| null` | No | `null` | Shell command to generate notification title (handled by SDK) |
-| `templates.<type>.messageCmd` | `string \| null` | No | `null` | Shell command to generate notification message (handled by SDK) |
 | `backend` | `object` | No | `{}` | ntfy.sh-specific configuration (see below) |
 
 #### Backend Configuration Properties
@@ -100,12 +96,6 @@ The `backend` object contains all ntfy.sh-specific settings:
     "session.idle": { "enabled": true },
     "session.error": { "enabled": true },
     "permission.asked": { "enabled": true }
-  },
-  "templates": {
-    "session.idle": {
-      "titleCmd": "echo 'Custom Idle Title'",
-      "messageCmd": null
-    }
   },
   "backend": {
     "topic": "my-notifications",
@@ -136,7 +126,7 @@ The `parseNtfyBackendConfig()` function in `src/config.ts` must:
 The JSON Schema file (`opencode-ntfy.schema.json`) must:
 
 - Be a valid JSON Schema (draft 2020-12 or later)
-- Define the full configuration structure including SDK-level properties (`enabled`, `events`, `templates`) and the `backend` object with all ntfy-specific properties
+- Define the full configuration structure including SDK-level properties (`enabled`, `events`) and the `backend` object with all ntfy-specific properties
 - Use `enum` for fields with a fixed set of valid values (e.g., `priority`, `icon.mode`)
 - Use `pattern` for fields with specific formats where appropriate
 - Mark `backend.topic` as required when `backend` is present
@@ -187,13 +177,15 @@ The `send()` method of the notification backend sends notifications via HTTP POS
 ```
 POST https://ntfy.sh/<topic>
 Headers:
-  Title: <title from NotificationContext>
+  Title: <title produced by the backend>
   Priority: <priority from backend config>
   Tags: <default tag for the event type>
   X-Icon: <resolved icon URL based on mode and config settings>
   Authorization: Bearer <token>  (if token is set)
-Body: <message from NotificationContext>
+Body: <message produced by the backend>
 ```
+
+The backend is responsible for producing the notification title and message. The `NotificationContext` provides only the `event` and `metadata` -- it does not include pre-resolved title or message fields. The backend must determine the appropriate title and message content itself (e.g., using default strings, the SDK's `renderTemplate` utility, or other logic).
 
 #### Default Tags
 
@@ -213,12 +205,11 @@ When `backend.fetchTimeout` is set (parsed from an ISO 8601 duration string to m
 
 The `send()` method must throw an error if the ntfy.sh server returns a non-OK (non-2xx) HTTP response. The SDK wraps every call to `send()` in a try/catch and silently ignores errors, so throwing here will not crash the host process.
 
-### Node.js Version Support
+### Bun Runtime
 
-The plugin must support all currently supported versions of Node.js (i.e., versions that have not reached end-of-life). As of the time of writing, the supported versions are Node.js 20, 22, and 24. This support must be enforced in two ways:
+This is a Bun project. Bun is used as the JavaScript/TypeScript runtime, package manager, and task runner. All commands (`bun install`, `bun run build`, `bun run test`, `bun run lint`) use Bun rather than Node.js or npm.
 
-1. **`engines` field in `package.json`**: Set the `engines.node` field to restrict the minimum supported Node.js version. Since the plugin relies on native `fetch` (available since Node.js 18) and uses ES module syntax, the minimum version must match the oldest currently supported Node.js release (e.g., `>=20`). Update this field as Node.js versions reach end-of-life.
-2. **CI matrix in `.github/workflows/ci.yml`**: The CI pipeline must use a matrix strategy to run lint, build, and test steps against all currently supported Node.js versions. This ensures compatibility is verified on every pull request and push. The publish step must only run once (on the latest Node.js version) to avoid duplicate publishes.
+1. **CI in `.github/workflows/ci.yml`**: The CI pipeline must use Bun (via `oven-sh/setup-bun`) to install dependencies, lint, build, and test. The publish step should use Bun as well.
 
 ### Tech Stack
 
@@ -228,8 +219,8 @@ The plugin must support all currently supported versions of Node.js (i.e., versi
 - `opencode-notification-sdk` as a runtime dependency
 - Small third-party runtime dependencies are allowed and preferred for well-scoped problems. In particular:
   - Use a small library for parsing ISO 8601 duration strings (e.g., `iso8601-duration` or similar) instead of hand-rolling a parser.
-- Beyond the above, avoid unnecessary runtime dependencies. Node.js built-in `fetch` is used for HTTP requests.
-- Publishable as an npm package
+- Beyond the above, avoid unnecessary runtime dependencies. Bun's built-in `fetch` is used for HTTP requests.
+- Publishable as an npm package (via `bun publish`)
 
 ### Project Structure
 

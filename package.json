@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint src/ tests/",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "bun run build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
@@ -53,9 +53,6 @@
     "coding-assistant",
     "plugin"
   ],
-  "engines": {
-    "node": ">=20"
-  },
   "dependencies": {
     "iso8601-duration": "^2.1.3",
     "opencode-notification-sdk": "^0.0.2"
