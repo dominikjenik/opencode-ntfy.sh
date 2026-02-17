@@ -89,6 +89,38 @@
           "type": "string",
           "pattern": "^P",
           "description": "ISO 8601 duration for the HTTP request timeout when calling the ntfy.sh server (e.g., 'PT10S' for 10 seconds)."
+        },
+        "title": {
+          "type": "object",
+          "description": "Title configuration per event type. Each key is an event type and the value specifies how to produce the notification title.",
+          "additionalProperties": false,
+          "properties": {
+            "session.idle": {
+              "$ref": "#/$defs/contentTemplate"
+            },
+            "session.error": {
+              "$ref": "#/$defs/contentTemplate"
+            },
+            "permission.asked": {
+              "$ref": "#/$defs/contentTemplate"
+            }
+          }
+        },
+        "message": {
+          "type": "object",
+          "description": "Message configuration per event type. Each key is an event type and the value specifies how to produce the notification message.",
+          "additionalProperties": false,
+          "properties": {
+            "session.idle": {
+              "$ref": "#/$defs/contentTemplate"
+            },
+            "session.error": {
+              "$ref": "#/$defs/contentTemplate"
+            },
+            "permission.asked": {
+              "$ref": "#/$defs/contentTemplate"
+            }
+          }
         }
       }
     }
@@ -105,6 +137,31 @@
           "description": "Whether this event type triggers notifications."
         }
       }
+    },
+    "contentTemplate": {
+      "type": "object",
+      "description": "Content template for a notification field. Must contain exactly one of 'value' or 'command'.",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": ["value"],
+          "properties": {
+            "value": {
+              "type": "string",
+              "description": "A template string rendered via renderTemplate. Supports {var_name} placeholders."
+            }
+          }
+        },
+        {
+          "required": ["command"],
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "A template string rendered via renderTemplate, then executed as a shell command. The trimmed stdout is used as the value."
+            }
+          }
+        }
+      ]
     }
   }
 }

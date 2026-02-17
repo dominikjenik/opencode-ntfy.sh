@@ -319,6 +319,43 @@ describe("JSON Schema", () => {
     expect(backendProps).toContain("priority");
     expect(backendProps).toContain("icon");
     expect(backendProps).toContain("fetchTimeout");
+    expect(backendProps).toContain("title");
+    expect(backendProps).toContain("message");
+  });
+
+  it("should define title and message as objects with event type properties using oneOf", () => {
+    const schemaPath = join(
+      import.meta.dirname,
+      "..",
+      "opencode-ntfy.schema.json"
+    );
+    const schema = JSON.parse(readFileSync(schemaPath, "utf-8"));
+    const titleSchema = schema.properties.backend.properties.title;
+    const messageSchema = schema.properties.backend.properties.message;
+
+    // Both should be objects
+    expect(titleSchema.type).toBe("object");
+    expect(messageSchema.type).toBe("object");
+
+    // Both should define properties for each event type
+    const titleProps = Object.keys(titleSchema.properties);
+    expect(titleProps).toContain("session.idle");
+    expect(titleProps).toContain("session.error");
+    expect(titleProps).toContain("permission.asked");
+
+    const messageProps = Object.keys(messageSchema.properties);
+    expect(messageProps).toContain("session.idle");
+    expect(messageProps).toContain("session.error");
+    expect(messageProps).toContain("permission.asked");
+
+    // Each event type property should reference contentTemplate which uses oneOf
+    const idleTitleRef = titleSchema.properties["session.idle"].$ref;
+    expect(idleTitleRef).toBe("#/$defs/contentTemplate");
+
+    // The contentTemplate def should use oneOf with value or command
+    const contentTemplateDef = schema.$defs.contentTemplate;
+    expect(contentTemplateDef.oneOf).toBeDefined();
+    expect(contentTemplateDef.oneOf.length).toBe(2);
   });
 
   it("should require topic within backend when backend is present", () => {
