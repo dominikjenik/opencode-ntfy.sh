@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { http, HttpResponse, delay } from "msw";
+import { execSync } from "node:child_process";
 import type { NotificationContext } from "opencode-notification-sdk";
+import type { PluginInput } from "@opencode-ai/plugin";
 import { createNtfyBackend } from "../src/backend.js";
 import type { NtfyBackendConfig } from "../src/config.js";
 import {
@@ -9,6 +11,99 @@ import {
   getCapturedRequest,
   resetCapturedRequest,
 } from "./msw-helpers.js";
+
+/**
+ * Creates a minimal shell function that satisfies the PluginInput["$"]
+ * interface for testing. Uses child_process.execSync to execute commands.
+ *
+ * This is intentionally typed loosely since we only need it to satisfy
+ * the SDK's execCommand usage pattern: $ `${{ raw: command }}`.nothrow().quiet()
+ */
+function createTestShell(): PluginInput["$"] {
+  function getExitCode(err: unknown): number {
+    if (err !== null && typeof err === "object" && "status" in err && typeof err.status === "number") {
+      return err.status;
+    }
+    return 1;
+  }
+
+  // We construct the shell function manually to match BunShell's interface.
+  // The function itself is the tagged template literal handler.
+  // We add static methods as properties on the function object.
+  // The type is structurally compatible with BunShell.
+  function shellFn(
+    strings: TemplateStringsArray,
+    ...expressions: Array<{ raw?: string; toString(): string }>
+  ): ReturnType<PluginInput["$"]> {
+    // Reconstruct the command from tagged template literal parts
+    let command = "";
+    for (let i = 0; i < strings.length; i++) {
+      command += strings[i];
+      if (i < expressions.length) {
+        const expr = expressions[i];
+        if (typeof expr === "object" && expr !== null && "raw" in expr && typeof expr.raw === "string") {
+          command += expr.raw;
+        } else {
+          command += String(expr);
+        }
+      }
+    }
+    command = command.trim();
+
+    let stdout = "";
+    let exitCode = 0;
+    try {
+      stdout = execSync(command, { encoding: "utf-8" });
+    } catch (err: unknown) {
+      exitCode = getExitCode(err);
+    }
+
+    const output = {
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.from(""),
+      exitCode,
+      text: () => stdout,
+      json: () => JSON.parse(stdout),
+      arrayBuffer: () => Buffer.from(stdout).buffer,
+      bytes: () => new Uint8Array(Buffer.from(stdout)),
+      blob: () => new Blob([stdout]),
+    };
+
+    const resolved = Promise.resolve(output);
+
+    // Build a chainable promise object matching BunShellPromise
+    const chainable: ReturnType<PluginInput["$"]> = {
+      then: resolved.then.bind(resolved),
+      catch: resolved.catch.bind(resolved),
+      finally: resolved.finally.bind(resolved),
+      [Symbol.toStringTag]: "Promise",
+      stdin: new WritableStream(),
+      cwd: () => chainable,
+      env: () => chainable,
+      quiet: () => chainable,
+      lines: async function* () { yield stdout; },
+      text: () => Promise.resolve(stdout),
+      json: () => Promise.resolve(JSON.parse(stdout)),
+      arrayBuffer: () => Promise.resolve(Buffer.from(stdout).buffer),
+      blob: () => Promise.resolve(new Blob([stdout])),
+      nothrow: () => chainable,
+      throws: () => chainable,
+    };
+
+    return chainable;
+  }
+
+  // Add required static properties of BunShell
+  shellFn.braces = (pattern: string) => [pattern];
+  shellFn.escape = (input: string) => input;
+  shellFn.env = (): PluginInput["$"] => testShell;
+  shellFn.cwd = (): PluginInput["$"] => testShell;
+  shellFn.nothrow = (): PluginInput["$"] => testShell;
+  shellFn.throws = (): PluginInput["$"] => testShell;
+
+  const testShell: PluginInput["$"] = shellFn;
+  return testShell;
+}
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
@@ -265,5 +360,168 @@ describe("createNtfyBackend", () => {
     const captured = getCapturedRequest();
     expect(captured).not.toBeNull();
     expect(captured!.url).toBe("https://custom.ntfy.sh/special-topic");
+  });
+
+  describe("value templates", () => {
+    it("should use a value title template with renderTemplate substitution", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const backend = createNtfyBackend(
+        makeConfig({
+          title: {
+            "session.idle": { value: "{project}: Agent Idle" },
+          },
+        })
+      );
+      await backend.send(
+        makeContext({
+          event: "session.idle",
+          metadata: {
+            sessionId: "sess-123",
+            projectName: "my-project",
+            timestamp: "2026-01-01T00:00:00.000Z",
+          },
+        })
+      );
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      expect(captured!.headers.get("Title")).toBe("my-project: Agent Idle");
+    });
+
+    it("should use a value message template with renderTemplate substitution", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const backend = createNtfyBackend(
+        makeConfig({
+          message: {
+            "session.error": { value: "Error in {project}: {error}" },
+          },
+        })
+      );
+      await backend.send(
+        makeContext({
+          event: "session.error",
+          metadata: {
+            sessionId: "sess-123",
+            projectName: "my-project",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            error: "something broke",
+          },
+        })
+      );
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      expect(captured!.body).toBe("Error in my-project: something broke");
+    });
+
+    it("should fall back to default title when no title template for the event", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const backend = createNtfyBackend(
+        makeConfig({
+          title: {
+            "session.error": { value: "Custom Error Title" },
+          },
+        })
+      );
+      await backend.send(makeContext({ event: "session.idle" }));
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      expect(captured!.headers.get("Title")).toBe("Agent Idle");
+    });
+
+    it("should fall back to default message when no message template for the event", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const backend = createNtfyBackend(
+        makeConfig({
+          message: {
+            "session.error": { value: "Custom Error Message" },
+          },
+        })
+      );
+      await backend.send(makeContext({ event: "session.idle" }));
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      expect(captured!.body).toBe(
+        "The agent has finished and is waiting for input."
+      );
+    });
+
+    it("should replace unrecognized placeholders with empty strings", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const backend = createNtfyBackend(
+        makeConfig({
+          message: {
+            "session.idle": { value: "{project}-{unknown_var}-idle" },
+          },
+        })
+      );
+      await backend.send(makeContext({ event: "session.idle" }));
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      // {unknown_var} is replaced with empty string by renderTemplate
+      expect(captured!.body).toBe("my-project--idle");
+    });
+  });
+
+  describe("command templates", () => {
+    it("should use a command title template with execTemplate", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const testShell = createTestShell();
+      const backend = createNtfyBackend(
+        makeConfig({
+          title: {
+            "session.idle": { command: "echo Agent finished in {project}" },
+          },
+        }),
+        testShell
+      );
+      await backend.send(makeContext({ event: "session.idle" }));
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      expect(captured!.headers.get("Title")).toBe(
+        "Agent finished in my-project"
+      );
+    });
+
+    it("should use a command message template with execTemplate", async () => {
+      server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+      const testShell = createTestShell();
+      const backend = createNtfyBackend(
+        makeConfig({
+          message: {
+            "session.error": {
+              command: "echo Error: {error} in {project}",
+            },
+          },
+        }),
+        testShell
+      );
+      await backend.send(
+        makeContext({
+          event: "session.error",
+          metadata: {
+            sessionId: "sess-123",
+            projectName: "my-project",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            error: "something broke",
+          },
+        })
+      );
+
+      const captured = getCapturedRequest();
+      expect(captured).not.toBeNull();
+      expect(captured!.body).toBe("Error: something broke in my-project");
+    });
   });
 });

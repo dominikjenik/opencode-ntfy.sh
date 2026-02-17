@@ -1,9 +1,15 @@
+import type { PluginInput } from "@opencode-ai/plugin";
 import type {
   NotificationBackend,
   NotificationContext,
   NotificationEvent,
 } from "opencode-notification-sdk";
-import type { NtfyBackendConfig } from "./config.js";
+import { renderTemplate, execTemplate } from "opencode-notification-sdk";
+import type {
+  NtfyBackendConfig,
+  ContentTemplate,
+  ContentTemplateMap,
+} from "./config.js";
 
 const DEFAULT_TITLES: Record<NotificationEvent, string> = {
   "session.idle": "Agent Idle",
@@ -24,15 +30,57 @@ const DEFAULT_TAGS: Record<NotificationEvent, string> = {
   "permission.asked": "lock",
 };
 
+function isValueTemplate(
+  template: ContentTemplate
+): template is { readonly value: string } {
+  return "value" in template;
+}
+
+async function resolveContent(
+  templateMap: ContentTemplateMap | undefined,
+  event: NotificationEvent,
+  defaults: Record<NotificationEvent, string>,
+  context: NotificationContext,
+  $?: PluginInput["$"]
+): Promise<string> {
+  const template = templateMap?.[event];
+  if (!template) {
+    return defaults[event] ?? "";
+  }
+  if (isValueTemplate(template)) {
+    return renderTemplate(template.value, context);
+  }
+  // command template
+  if (!$) {
+    throw new Error(
+      `Command template configured for ${event} but no shell ($) was provided`
+    );
+  }
+  return execTemplate($, template.command, context);
+}
+
 export function createNtfyBackend(
-  config: NtfyBackendConfig
+  config: NtfyBackendConfig,
+  $?: PluginInput["$"]
 ): NotificationBackend {
   return {
     async send(context: NotificationContext): Promise<void> {
       const url = `${config.server}/${config.topic}`;
 
-      const title = DEFAULT_TITLES[context.event] ?? "";
-      const message = DEFAULT_MESSAGES[context.event] ?? "";
+      const title = await resolveContent(
+        config.title,
+        context.event,
+        DEFAULT_TITLES,
+        context,
+        $
+      );
+      const message = await resolveContent(
+        config.message,
+        context.event,
+        DEFAULT_MESSAGES,
+        context,
+        $
+      );
       const tags = DEFAULT_TAGS[context.event] ?? "";
 
       const headers: Record<string, string> = {
