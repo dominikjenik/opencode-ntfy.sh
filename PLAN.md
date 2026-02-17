@@ -305,3 +305,23 @@ Migrate the plugin to use `opencode-notification-sdk` as a runtime dependency. T
 - [x] Update README "How It Works" to reflect SDK's content utilities model
 - [x] Update schema tests to not expect `templates` property
 - [x] Ensure all tests pass, lint is clean, and package builds cleanly
+
+## Phase 32: Add Configurable Notification Content Templates
+
+- [x] Add `ContentTemplate`, `ContentTemplateMap` types and `title`/`message` fields to `NtfyBackendConfig` in `src/config.ts`
+- [x] Add `parseContentTemplateMap()` function to validate and parse `title`/`message` objects
+  - Validates event type keys (`session.idle`, `session.error`, `permission.asked`)
+  - Validates exactly one of `value` or `command` per entry; throws on both or neither
+- [x] Write tests for title/message template parsing and validation in `tests/config.test.ts`
+- [x] Update `src/backend.ts` to resolve title/message from content templates
+  - Value templates: use `renderTemplate()` from SDK for `{var_name}` substitution
+  - Command templates: use `execTemplate()` from SDK for shell command execution
+  - Falls back to hardcoded defaults when no template configured for an event
+- [x] Accept optional `$` (BunShell) parameter in `createNtfyBackend()` for command template execution
+- [x] Write tests for template resolution in `tests/backend.test.ts` (value, command, fallback, unrecognized vars)
+- [x] Restructure `src/index.ts` to pass `input.$` from PluginInput to `createNtfyBackend()`
+- [x] Update typecheck test for `createNtfyBackend` with optional `$` parameter
+- [x] Add `title` and `message` to `opencode-ntfy.schema.json` with `contentTemplate` $def using `oneOf`
+- [x] Write schema tests for title/message property definitions
+- [x] Update `README.md` with notification content template documentation
+- [x] Ensure all 68 tests pass, lint is clean, and package builds cleanly

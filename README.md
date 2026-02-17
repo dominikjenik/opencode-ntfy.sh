@@ -106,6 +106,52 @@ The `backend` object contains all ntfy.sh-specific settings:
 | `backend.icon.variant.light` | `string` | No | -- | Custom icon URL override for light mode. |
 | `backend.icon.variant.dark` | `string` | No | -- | Custom icon URL override for dark mode. |
 | `backend.fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S`). |
+| `backend.title` | `object` | No | (see defaults) | Title configuration per event type. |
+| `backend.title.<event>` | `object` | No | (see defaults) | Content template for the notification title. Must contain exactly one of `value` or `command`. |
+| `backend.title.<event>.value` | `string` | No | -- | A template string rendered with `{var_name}` substitution. |
+| `backend.title.<event>.command` | `string` | No | -- | A template string rendered and executed as a shell command; stdout is used as the title. |
+| `backend.message` | `object` | No | (see defaults) | Message configuration per event type. |
+| `backend.message.<event>` | `object` | No | (see defaults) | Content template for the notification message. Must contain exactly one of `value` or `command`. |
+| `backend.message.<event>.value` | `string` | No | -- | A template string rendered with `{var_name}` substitution. |
+| `backend.message.<event>.command` | `string` | No | -- | A template string rendered and executed as a shell command; stdout is used as the message. |
+
+### Notification Content
+
+The notification title and message are configurable per event type via
+`backend.title` and `backend.message`. Each key is an event type
+(`session.idle`, `session.error`, `permission.asked`), and the value specifies
+how to produce the content:
+
+- **`value`** -- A template string with `{var_name}` placeholders, resolved via
+  the SDK's `renderTemplate`. No shell execution.
+- **`command`** -- A template string with `{var_name}` placeholders, resolved
+  and then executed as a shell command. The trimmed stdout is used as the
+  content.
+
+Each per-event object must contain exactly one of `value` or `command`.
+
+#### Available Template Variables
+
+| Variable | Description |
+|---|---|
+| `{event}` | Event type (e.g., `session.idle`) |
+| `{time}` | ISO 8601 timestamp |
+| `{project}` | Project directory basename |
+| `{session_id}` | Session ID (empty if unavailable) |
+| `{error}` | Error message (empty if not an error event) |
+| `{permission_type}` | Permission type (empty if not a permission event) |
+| `{permission_patterns}` | Comma-separated patterns (empty if not a permission event) |
+
+#### Default Values
+
+When no title or message template is configured for an event type, these
+defaults are used:
+
+| Event | Default Title | Default Message |
+|---|---|---|
+| `session.idle` | `Agent Idle` | `The agent has finished and is waiting for input.` |
+| `session.error` | `Agent Error` | `An error has occurred. Check the session for details.` |
+| `permission.asked` | `Permission Asked` | `The agent needs permission to continue. Review and respond.` |
 
 ### Example Configurations
 
@@ -146,10 +192,33 @@ Full configuration:
     "topic": "my-notifications",
     "server": "https://ntfy.sh",
     "priority": "default",
+    "title": {
+      "session.idle": { "value": "{project}: Agent Idle" },
+      "session.error": { "value": "{project}: Agent Error" }
+    },
+    "message": {
+      "session.error": { "value": "Error in {project}: {error}" }
+    },
     "icon": {
       "mode": "dark"
     },
     "fetchTimeout": "PT10S"
+  }
+}
+```
+
+With command templates:
+
+```json
+{
+  "backend": {
+    "topic": "my-notifications",
+    "title": {
+      "session.idle": { "command": "echo Agent finished in {project}" }
+    },
+    "message": {
+      "permission.asked": { "command": "echo Permission {permission_type} requested" }
+    }
   }
 }
 ```
