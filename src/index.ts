@@ -7,7 +7,7 @@ import { parseNtfyBackendConfig } from "./config.js";
 import { createNtfyBackend } from "./backend.js";
 
 const config = loadConfig("ntfy");
-const backendRaw = getBackendConfig(config);
+const backendRaw = getBackendConfig(config, "ntfy");
 const backendConfig = parseNtfyBackendConfig(backendRaw);
 const backend = createNtfyBackend(backendConfig);
 

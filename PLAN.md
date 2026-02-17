@@ -169,7 +169,16 @@
 - [x] Rewrite `parseISO8601Duration` to delegate to `iso8601-duration` (parse + toSeconds) instead of hand-rolled regex
 - [x] Ensure all tests pass, lint is clean, and package builds cleanly
 
-## Phase 27: Migrate Icon Config to Nested Object Structure
+## Phase 31: Fix SDK API Conformance
+
+- [x] Fix `getBackendConfig` call in `src/index.ts` to pass required second argument (`"ntfy"`)
+- [x] Rewrite `src/backend.ts` to produce notification title and message from event type instead of reading `context.title`/`context.message` (which don't exist on `NotificationContext`)
+  - `session.idle`: Title "Agent Idle", Message "The agent has finished and is waiting for input."
+  - `session.error`: Title "Agent Error", Message "An error has occurred. Check the session for details."
+  - `permission.asked`: Title "Permission Asked", Message "The agent needs permission to continue. Review and respond."
+- [x] Rewrite `tests/backend.test.ts` to use correct `NotificationContext` type (event + metadata only, no title/message) and test produced content
+- [x] Update README.md "How It Works" section to remove reference to SDK content utilities
+- [x] Ensure all 47 tests pass, lint is clean, and package builds cleanly
 
 - [x] Change icon config from flat properties (`iconMode`, `iconLight`, `iconDark`) to nested `icon` object (`icon.mode`, `icon.variant.light`, `icon.variant.dark`)
 - [x] Update `src/config.ts` `loadConfig()` to parse nested `icon` object from config file

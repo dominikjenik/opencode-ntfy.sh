@@ -20,8 +20,8 @@ The SDK handles common notification logic:
 - **Event routing** -- classifying OpenCode events into notification types
 - **Subagent suppression** -- silently suppressing notifications from sub-agent
   (child) sessions for `session.idle` and `session.error` events
-- **Content utilities** -- `renderTemplate()`, `execCommand()`, and
-  `execTemplate()` for template rendering and shell command execution
+- **Configuration loading** -- reading and parsing the config file, handling the
+  `enabled` and `events` sections
 
 This plugin is responsible for the ntfy.sh-specific concerns: producing
 notification content (title and message), formatting and sending the HTTP POST

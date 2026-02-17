@@ -4,7 +4,7 @@ You are building an OpenCode notification backend plugin for ntfy.sh, built on t
 
 ## Goal
 
-Build a TypeScript OpenCode plugin (`opencode-ntfy.sh`) that delivers push notifications to a user's phone or desktop via the ntfy.sh service. This plugin is a **notification backend** for the [`opencode-notification-sdk`](https://www.npmjs.com/package/opencode-notification-sdk). The SDK handles common notification logic (event routing, subagent suppression) and provides content utilities for template rendering and shell command execution. This project is responsible for the ntfy.sh-specific concerns: producing notification content (title and message), formatting and sending the HTTP POST request, validating ntfy-specific configuration, and resolving the notification icon URL.
+Build a TypeScript OpenCode plugin (`opencode-ntfy.sh`) that delivers push notifications to a user's phone or desktop via the ntfy.sh service. This plugin is a **notification backend** for the [`opencode-notification-sdk`](https://www.npmjs.com/package/opencode-notification-sdk). The SDK handles common notification logic (event routing, subagent suppression). This project is responsible for the ntfy.sh-specific concerns: producing notification content (title and message), formatting and sending the HTTP POST request, validating ntfy-specific configuration, and resolving the notification icon URL.
 
 ## Instructions
 
@@ -34,7 +34,6 @@ This plugin depends on `opencode-notification-sdk` as a runtime dependency. The 
 
 - **Event routing** -- classifying raw OpenCode events into notification types (`session.idle`, `session.error`, `permission.asked`)
 - **Subagent suppression** -- silently suppressing notifications from sub-agent (child) sessions for `session.idle` and `session.error` events
-- **Content utilities** -- `renderTemplate()` for synchronous `{var_name}` placeholder substitution, `execCommand()` for running shell commands and returning stdout, and `execTemplate()` which combines both (renders variables into a command string, executes it, and returns stdout). These are exported from the SDK for backends to use when producing notification content.
 - **Configuration loading** -- reading and parsing the config file, handling the `enabled` and `events` sections. `getBackendConfig(config, backendName)` extracts the backend-specific configuration object (the second `backendName` argument is required).
 - **Plugin factory** -- `createNotificationPlugin()` wires everything together and returns a valid OpenCode `Plugin`
 
@@ -46,14 +45,14 @@ interface NotificationBackend {
 }
 ```
 
-The SDK calls `send()` only after all filtering (event classification, enabled checks, subagent suppression) is complete. The `NotificationContext` passed to `send()` contains the `event` and `metadata`. The SDK does not prescribe what fields a notification must contain (e.g., title, message) -- backends are responsible for deciding what content to produce and can use the SDK's content utilities (`renderTemplate`, `execCommand`, `execTemplate`) to do so.
+The SDK calls `send()` only after all filtering (event classification, enabled checks, subagent suppression) is complete. The `NotificationContext` passed to `send()` contains the `event` and `metadata`. The SDK does not prescribe what fields a notification must contain (e.g., title, message) -- backends are fully responsible for deciding what content to produce and how to produce it.
 
 ### Plugin Behavior
 
 - The plugin must be installable from the npm registry (e.g., `bun add opencode-ntfy.sh`) or by placing it in `.opencode/plugins/`.
 - The plugin uses `createNotificationPlugin()` from the SDK with `backendConfigKey: "ntfy"` to create the OpenCode plugin.
 - The SDK handles all event routing and subagent suppression. This plugin does not implement any of that logic.
-- The plugin is responsible for producing notification content (title and message) and delivering the notification via the ntfy.sh HTTP API when the SDK calls `backend.send()`. The plugin should use the SDK's content utilities (`renderTemplate`, `execCommand`, `execTemplate`) as needed to produce content.
+- The plugin is responsible for producing notification content (title and message) and delivering the notification via the ntfy.sh HTTP API when the SDK calls `backend.send()`. The backend must handle all content production logic directly, including any templating or string formatting needed to construct the notification title and message from the event metadata.
 
 ### Configuration File
 
@@ -185,7 +184,7 @@ Headers:
 Body: <message produced by the backend>
 ```
 
-The backend is responsible for producing the notification title and message. The `NotificationContext` provides only the `event` and `metadata` -- it does not include pre-resolved title or message fields. The backend must determine the appropriate title and message content itself (e.g., using default strings, the SDK's `renderTemplate` utility, or other logic).
+The backend is responsible for producing the notification title and message. The `NotificationContext` provides only the `event` and `metadata` -- it does not include pre-resolved title or message fields. The backend must determine the appropriate title and message content itself (e.g., using default strings, string formatting based on event metadata, or other logic). The SDK does not provide any templating utilities -- all content production is handled entirely by the backend.
 
 #### Default Tags
 

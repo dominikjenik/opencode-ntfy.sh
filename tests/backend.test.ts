@@ -17,11 +17,11 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-function makeContext(overrides: Partial<NotificationContext> = {}): NotificationContext {
+function makeContext(
+  overrides: Partial<NotificationContext> = {}
+): NotificationContext {
   return {
     event: "session.idle",
-    title: "Test Title",
-    message: "Test message",
     metadata: {
       sessionId: "sess-123",
       projectName: "my-project",
@@ -31,7 +31,9 @@ function makeContext(overrides: Partial<NotificationContext> = {}): Notification
   };
 }
 
-function makeConfig(overrides: Partial<NtfyBackendConfig> = {}): NtfyBackendConfig {
+function makeConfig(
+  overrides: Partial<NtfyBackendConfig> = {}
+): NtfyBackendConfig {
   return {
     topic: "my-topic",
     server: "https://ntfy.sh",
@@ -42,7 +44,7 @@ function makeConfig(overrides: Partial<NtfyBackendConfig> = {}): NtfyBackendConf
 }
 
 describe("createNtfyBackend", () => {
-  it("should send a POST request with correct headers and body", async () => {
+  it("should send a POST request to the configured server and topic", async () => {
     server.use(captureHandler("https://ntfy.sh/my-topic"));
 
     const backend = createNtfyBackend(makeConfig());
@@ -52,9 +54,78 @@ describe("createNtfyBackend", () => {
     expect(captured).not.toBeNull();
     expect(captured!.url).toBe("https://ntfy.sh/my-topic");
     expect(captured!.method).toBe("POST");
-    expect(captured!.headers.get("Title")).toBe("Test Title");
-    expect(captured!.headers.get("Priority")).toBe("default");
-    expect(captured!.body).toBe("Test message");
+  });
+
+  it("should produce 'Agent Idle' title for session.idle events", async () => {
+    server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+    const backend = createNtfyBackend(makeConfig());
+    await backend.send(makeContext({ event: "session.idle" }));
+
+    const captured = getCapturedRequest();
+    expect(captured).not.toBeNull();
+    expect(captured!.headers.get("Title")).toBe("Agent Idle");
+  });
+
+  it("should produce 'Agent Error' title for session.error events", async () => {
+    server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+    const backend = createNtfyBackend(makeConfig());
+    await backend.send(makeContext({ event: "session.error" }));
+
+    const captured = getCapturedRequest();
+    expect(captured).not.toBeNull();
+    expect(captured!.headers.get("Title")).toBe("Agent Error");
+  });
+
+  it("should produce 'Permission Asked' title for permission.asked events", async () => {
+    server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+    const backend = createNtfyBackend(makeConfig());
+    await backend.send(makeContext({ event: "permission.asked" }));
+
+    const captured = getCapturedRequest();
+    expect(captured).not.toBeNull();
+    expect(captured!.headers.get("Title")).toBe("Permission Asked");
+  });
+
+  it("should produce idle message body for session.idle events", async () => {
+    server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+    const backend = createNtfyBackend(makeConfig());
+    await backend.send(makeContext({ event: "session.idle" }));
+
+    const captured = getCapturedRequest();
+    expect(captured).not.toBeNull();
+    expect(captured!.body).toBe(
+      "The agent has finished and is waiting for input."
+    );
+  });
+
+  it("should produce error message body for session.error events", async () => {
+    server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+    const backend = createNtfyBackend(makeConfig());
+    await backend.send(makeContext({ event: "session.error" }));
+
+    const captured = getCapturedRequest();
+    expect(captured).not.toBeNull();
+    expect(captured!.body).toBe(
+      "An error has occurred. Check the session for details."
+    );
+  });
+
+  it("should produce permission message body for permission.asked events", async () => {
+    server.use(captureHandler("https://ntfy.sh/my-topic"));
+
+    const backend = createNtfyBackend(makeConfig());
+    await backend.send(makeContext({ event: "permission.asked" }));
+
+    const captured = getCapturedRequest();
+    expect(captured).not.toBeNull();
+    expect(captured!.body).toBe(
+      "The agent needs permission to continue. Review and respond."
+    );
   });
 
   it("should use the default tag 'hourglass_done' for session.idle events", async () => {
