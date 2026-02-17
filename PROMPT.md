@@ -52,7 +52,7 @@ The SDK calls `send()` only after all filtering (event classification, enabled c
 - The plugin must be installable from the npm registry (e.g., `bun add opencode-ntfy.sh`) or by placing it in `.opencode/plugins/`.
 - The plugin uses `createNotificationPlugin()` from the SDK with `backendConfigKey: "ntfy"` to create the OpenCode plugin.
 - The SDK handles all event routing and subagent suppression. This plugin does not implement any of that logic.
-- The plugin is responsible for producing notification content (title and message) and delivering the notification via the ntfy.sh HTTP API when the SDK calls `backend.send()`. The backend must handle all content production logic directly, including any templating or string formatting needed to construct the notification title and message from the event metadata.
+- The plugin is responsible for producing notification content (title and message) and delivering the notification via the ntfy.sh HTTP API when the SDK calls `backend.send()`. The backend resolves the title and message using the SDK's `renderTemplate` (for `value` templates) or `execTemplate` (for `command` templates), based on per-event configuration in `backend.title` and `backend.message`. See [Notification Content](#notification-content) for full details.
 
 ### Configuration File
 
@@ -84,6 +84,14 @@ The `backend` object contains all ntfy.sh-specific settings:
 | `backend.icon.variant` | `object` | No | -- | Custom icon URL overrides per mode variant |
 | `backend.icon.variant.light` | `string` | No | -- | Custom icon URL override for light mode |
 | `backend.icon.variant.dark` | `string` | No | -- | Custom icon URL override for dark mode |
+| `backend.title` | `object` | No | (see [Notification Content](#notification-content)) | Title configuration per event type |
+| `backend.title.<event>` | `object` | No | (see defaults) | Content template for the notification title of a specific event type. Must contain exactly one of `value` or `command`. |
+| `backend.title.<event>.value` | `string` | No | -- | A template string rendered via `renderTemplate` and used directly as the title |
+| `backend.title.<event>.command` | `string` | No | -- | A template string rendered via `renderTemplate`, then executed as a shell command via `execTemplate`; the trimmed stdout is used as the title |
+| `backend.message` | `object` | No | (see [Notification Content](#notification-content)) | Message configuration per event type |
+| `backend.message.<event>` | `object` | No | (see defaults) | Content template for the notification message of a specific event type. Must contain exactly one of `value` or `command`. |
+| `backend.message.<event>.value` | `string` | No | -- | A template string rendered via `renderTemplate` and used directly as the message |
+| `backend.message.<event>.command` | `string` | No | -- | A template string rendered via `renderTemplate`, then executed as a shell command via `execTemplate`; the trimmed stdout is used as the message |
 | `backend.fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S` for 10 seconds) |
 
 #### Example Configuration
@@ -100,10 +108,99 @@ The `backend` object contains all ntfy.sh-specific settings:
     "topic": "my-notifications",
     "server": "https://ntfy.sh",
     "priority": "default",
+    "title": {
+      "session.idle": { "value": "{project}: Agent Idle" },
+      "session.error": { "value": "{project}: Agent Error" }
+    },
+    "message": {
+      "session.error": { "value": "Error in {project}: {error}" }
+    },
     "icon": {
       "mode": "dark"
     },
     "fetchTimeout": "PT10S"
+  }
+}
+```
+
+#### Notification Content
+
+The notification title and message are configurable per event type via the `backend.title` and `backend.message` objects. Each key in these objects is a `NotificationEvent` string (`session.idle`, `session.error`, `permission.asked`), and the value is an object containing exactly one of two mutually exclusive keys:
+
+- **`value`** -- A template string that is rendered via `renderTemplate(template, context)` from the SDK and used directly as the resolved content. This is a pure, synchronous string interpolation with no I/O or shell execution. Unrecognized `{var_name}` placeholders are replaced with empty strings.
+- **`command`** -- A template string that is rendered via `renderTemplate` to substitute `{var_name}` placeholders, then executed as a shell command via `execTemplate($, template, context)` from the SDK. The trimmed stdout of the command is used as the resolved content. If the command fails (non-zero exit code), `execTemplate` throws an error.
+
+Each per-event object must contain exactly one of `value` or `command`. Specifying both or neither is a validation error.
+
+##### Available Template Variables
+
+The following `{var_name}` placeholders are available in both `value` and `command` strings:
+
+| Variable | Source | Description |
+|---|---|---|
+| `{event}` | `context.event` | Event type (e.g., `session.idle`) |
+| `{time}` | `context.metadata.timestamp` | ISO 8601 timestamp |
+| `{project}` | `context.metadata.projectName` | Project directory basename |
+| `{session_id}` | `context.metadata.sessionId` | Session ID (empty if unavailable) |
+| `{error}` | `context.metadata.error` | Error message (empty if not an error event) |
+| `{permission_type}` | `context.metadata.permissionType` | Permission type (empty if not a permission event) |
+| `{permission_patterns}` | `context.metadata.permissionPatterns` | Comma-separated patterns (empty if not a permission event) |
+
+##### Default Values
+
+When `backend.title` or `backend.message` is omitted, or when a specific event type key is not present within them, the following defaults are used. These defaults behave as `value` templates (not commands):
+
+| Event | Default Title | Default Message |
+|---|---|---|
+| `session.idle` | `Agent Idle` | `The agent has finished and is waiting for input.` |
+| `session.error` | `Agent Error` | `An error has occurred. Check the session for details.` |
+| `permission.asked` | `Permission Asked` | `The agent needs permission to continue. Review and respond.` |
+
+##### Backend Access to `$`
+
+Because `execTemplate` requires the OpenCode `$` shell (from `PluginInput["$"]`), and the `NotificationBackend.send()` method only receives a `NotificationContext`, the `$` shell must be made available to the backend at construction time. The plugin entry point (`src/index.ts`) must pass `$` to `createNtfyBackend()` so that the backend can use it when resolving `command` templates. If no `command` templates are configured, `$` is never invoked.
+
+##### Examples
+
+Using `value` (rendered via `renderTemplate`, used directly):
+```json
+{
+  "backend": {
+    "topic": "my-notifications",
+    "title": {
+      "session.idle": { "value": "{project}: Agent Idle" }
+    },
+    "message": {
+      "session.error": { "value": "Error in {project}: {error}" }
+    }
+  }
+}
+```
+
+Using `command` (rendered via `renderTemplate`, then executed via `execTemplate`):
+```json
+{
+  "backend": {
+    "topic": "my-notifications",
+    "title": {
+      "session.idle": { "command": "echo Agent finished in {project}" }
+    },
+    "message": {
+      "permission.asked": { "command": "echo Permission {permission_type} requested for {permission_patterns}" }
+    }
+  }
+}
+```
+
+Mixing both approaches across different event types:
+```json
+{
+  "backend": {
+    "topic": "my-notifications",
+    "title": {
+      "session.idle": { "value": "{project}: Agent Idle" },
+      "session.error": { "command": "echo {project} error at $(date)" }
+    }
   }
 }
 ```
@@ -118,7 +215,8 @@ The `parseNtfyBackendConfig()` function in `src/config.ts` must:
 4. Validate `priority` against the allowed enum values (`min`, `low`, `default`, `high`, `max`); throw if invalid
 5. Parse `fetchTimeout` from an ISO 8601 duration string to milliseconds using a third-party library; throw if the string is invalid
 6. Resolve the icon URL based on `icon.mode` and `icon.variant` overrides
-7. Return a typed `NtfyBackendConfig` object
+7. Parse `title` and `message` objects if present. Each must be an object mapping `NotificationEvent` strings to content template objects. Validate that keys are valid event types and each value is an object containing exactly one of `value` (string) or `command` (string) -- throw if both or neither are present, or if the types are wrong. Store them in the config for use at send time. Missing event type keys use the defaults described in [Notification Content](#notification-content).
+8. Return a typed `NtfyBackendConfig` object
 
 #### JSON Schema
 
@@ -129,6 +227,7 @@ The JSON Schema file (`opencode-ntfy.schema.json`) must:
 - Use `enum` for fields with a fixed set of valid values (e.g., `priority`, `icon.mode`)
 - Use `pattern` for fields with specific formats where appropriate
 - Mark `backend.topic` as required when `backend` is present
+- Define `backend.title` and `backend.message` as objects whose properties are the event type names (`session.idle`, `session.error`, `permission.asked`). Each event type property must be an object with a `oneOf` constraint requiring exactly one of `value` (string) or `command` (string)
 - Include `additionalProperties: false` at appropriate levels to catch typos
 - Be included in the npm package `files` list in `package.json`
 
@@ -184,7 +283,7 @@ Headers:
 Body: <message produced by the backend>
 ```
 
-The backend is responsible for producing the notification title and message. The `NotificationContext` provides only the `event` and `metadata` -- it does not include pre-resolved title or message fields. The backend must determine the appropriate title and message content itself (e.g., using default strings, string formatting based on event metadata, or other logic). The SDK does not provide any templating utilities -- all content production is handled entirely by the backend.
+The backend is responsible for producing the notification title and message. The `NotificationContext` provides only the `event` and `metadata` -- it does not include pre-resolved title or message fields. At send time, the backend looks up the content template for the current event type from `backend.title.<event>` / `backend.message.<event>` (falling back to defaults if not configured). If the template object has a `value` key, the backend calls `renderTemplate(template, context)` from the SDK to perform synchronous `{var_name}` placeholder substitution and uses the result directly. If it has a `command` key, the backend calls `execTemplate($, template, context)` from the SDK to render placeholders and then execute the result as a shell command, using the trimmed stdout as the resolved value. See [Notification Content](#notification-content) for full details on template resolution, available variables, and defaults.
 
 #### Default Tags
 

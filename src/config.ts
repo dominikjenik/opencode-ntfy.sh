@@ -2,6 +2,21 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, toSeconds } from "iso8601-duration";
+import type { NotificationEvent } from "opencode-notification-sdk";
+
+export interface ValueTemplate {
+  readonly value: string;
+}
+
+export interface CommandTemplate {
+  readonly command: string;
+}
+
+export type ContentTemplate = ValueTemplate | CommandTemplate;
+
+export type ContentTemplateMap = Partial<
+  Record<NotificationEvent, ContentTemplate>
+>;
 
 export interface NtfyBackendConfig {
   topic: string;
@@ -10,9 +25,16 @@ export interface NtfyBackendConfig {
   priority: string;
   iconUrl: string;
   fetchTimeout?: number;
+  title?: ContentTemplateMap;
+  message?: ContentTemplateMap;
 }
 
 const VALID_PRIORITIES = ["min", "low", "default", "high", "max"] as const;
+const VALID_EVENTS: readonly NotificationEvent[] = [
+  "session.idle",
+  "session.error",
+  "permission.asked",
+] as const;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(
@@ -94,5 +116,55 @@ export function parseNtfyBackendConfig(
       ? parseISO8601Duration(raw.fetchTimeout)
       : undefined;
 
-  return { topic, server, token, priority, iconUrl, fetchTimeout };
+  // Optional: title and message content templates
+  const title = isRecord(raw.title)
+    ? parseContentTemplateMap(raw.title, "title")
+    : undefined;
+  const message = isRecord(raw.message)
+    ? parseContentTemplateMap(raw.message, "message")
+    : undefined;
+
+  return { topic, server, token, priority, iconUrl, fetchTimeout, title, message };
+}
+
+function isValidEvent(key: string): key is NotificationEvent {
+  return VALID_EVENTS.some((e) => e === key);
+}
+
+function parseContentTemplateMap(
+  raw: Record<string, unknown>,
+  fieldName: string
+): ContentTemplateMap {
+  const result: Partial<Record<NotificationEvent, ContentTemplate>> = {};
+  for (const key of Object.keys(raw)) {
+    if (!isValidEvent(key)) {
+      throw new Error(
+        `Invalid event type '${key}' in backend.${fieldName}. Valid events: ${VALID_EVENTS.join(", ")}`
+      );
+    }
+    const entry = raw[key];
+    if (!isRecord(entry)) {
+      throw new Error(
+        `backend.${fieldName}.${key} must be an object`
+      );
+    }
+    const hasValue = typeof entry.value === "string";
+    const hasCommand = typeof entry.command === "string";
+    if (hasValue && hasCommand) {
+      throw new Error(
+        `backend.${fieldName}.${key} must contain exactly one of 'value' or 'command', not both`
+      );
+    }
+    if (!hasValue && !hasCommand) {
+      throw new Error(
+        `backend.${fieldName}.${key} must contain exactly one of 'value' or 'command'`
+      );
+    }
+    if (hasValue && typeof entry.value === "string") {
+      result[key] = { value: entry.value };
+    } else if (hasCommand && typeof entry.command === "string") {
+      result[key] = { command: entry.command };
+    }
+  }
+  return result;
 }

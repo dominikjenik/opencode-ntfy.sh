@@ -152,6 +152,136 @@ describe("parseNtfyBackendConfig", () => {
       parseNtfyBackendConfig({ topic: "test", fetchTimeout: "invalid" })
     ).toThrow("Invalid ISO 8601 duration");
   });
+
+  describe("title templates", () => {
+    it("should parse a value template for session.idle", () => {
+      const config = parseNtfyBackendConfig({
+        topic: "test",
+        title: { "session.idle": { value: "{project}: Agent Idle" } },
+      });
+      expect(config.title).toEqual({
+        "session.idle": { value: "{project}: Agent Idle" },
+      });
+    });
+
+    it("should parse a command template for session.error", () => {
+      const config = parseNtfyBackendConfig({
+        topic: "test",
+        title: { "session.error": { command: "echo Error in {project}" } },
+      });
+      expect(config.title).toEqual({
+        "session.error": { command: "echo Error in {project}" },
+      });
+    });
+
+    it("should parse multiple event types", () => {
+      const config = parseNtfyBackendConfig({
+        topic: "test",
+        title: {
+          "session.idle": { value: "Idle" },
+          "session.error": { command: "echo Error" },
+          "permission.asked": { value: "Permission" },
+        },
+      });
+      expect(config.title).toEqual({
+        "session.idle": { value: "Idle" },
+        "session.error": { command: "echo Error" },
+        "permission.asked": { value: "Permission" },
+      });
+    });
+
+    it("should default title to undefined when not provided", () => {
+      const config = parseNtfyBackendConfig({ topic: "test" });
+      expect(config.title).toBeUndefined();
+    });
+
+    it("should throw when both value and command are specified", () => {
+      expect(() =>
+        parseNtfyBackendConfig({
+          topic: "test",
+          title: {
+            "session.idle": { value: "Idle", command: "echo Idle" },
+          },
+        })
+      ).toThrow();
+    });
+
+    it("should throw when neither value nor command is specified", () => {
+      expect(() =>
+        parseNtfyBackendConfig({
+          topic: "test",
+          title: { "session.idle": {} },
+        })
+      ).toThrow();
+    });
+
+    it("should throw when an invalid event type key is used", () => {
+      expect(() =>
+        parseNtfyBackendConfig({
+          topic: "test",
+          title: { "invalid.event": { value: "test" } },
+        })
+      ).toThrow();
+    });
+  });
+
+  describe("message templates", () => {
+    it("should parse a value template for session.idle", () => {
+      const config = parseNtfyBackendConfig({
+        topic: "test",
+        message: { "session.idle": { value: "Agent is idle in {project}" } },
+      });
+      expect(config.message).toEqual({
+        "session.idle": { value: "Agent is idle in {project}" },
+      });
+    });
+
+    it("should parse a command template for session.error", () => {
+      const config = parseNtfyBackendConfig({
+        topic: "test",
+        message: {
+          "session.error": { command: "echo Error: {error}" },
+        },
+      });
+      expect(config.message).toEqual({
+        "session.error": { command: "echo Error: {error}" },
+      });
+    });
+
+    it("should default message to undefined when not provided", () => {
+      const config = parseNtfyBackendConfig({ topic: "test" });
+      expect(config.message).toBeUndefined();
+    });
+
+    it("should throw when both value and command are specified for message", () => {
+      expect(() =>
+        parseNtfyBackendConfig({
+          topic: "test",
+          message: {
+            "session.idle": { value: "Idle", command: "echo Idle" },
+          },
+        })
+      ).toThrow();
+    });
+
+    it("should throw when neither value nor command is specified for message", () => {
+      expect(() =>
+        parseNtfyBackendConfig({
+          topic: "test",
+          message: { "session.idle": {} },
+        })
+      ).toThrow();
+    });
+
+    it("should throw when an invalid event type key is used for message", () => {
+      expect(() =>
+        parseNtfyBackendConfig({
+          topic: "test",
+          message: { "bad.event": { value: "test" } },
+        })
+      ).toThrow();
+    });
+  });
 });
 
 describe("JSON Schema", () => {
