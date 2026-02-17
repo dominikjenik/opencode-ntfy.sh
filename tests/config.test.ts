@@ -180,7 +180,6 @@ describe("JSON Schema", () => {
     expect(properties).toContain("$schema");
     expect(properties).toContain("enabled");
     expect(properties).toContain("events");
-    expect(properties).toContain("templates");
     // ntfy-specific backend properties
     expect(properties).toContain("backend");
     const backendProps = Object.keys(schema.properties.backend.properties);

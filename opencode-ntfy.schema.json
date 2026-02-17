@@ -31,28 +31,6 @@
         }
       }
     },
-    "templates": {
-      "oneOf": [
-        { "type": "null" },
-        {
-          "type": "object",
-          "description": "Per-event shell command templates for customizing notification content.",
-          "additionalProperties": false,
-          "properties": {
-            "session.idle": {
-              "$ref": "#/$defs/templateConfig"
-            },
-            "session.error": {
-              "$ref": "#/$defs/templateConfig"
-            },
-            "permission.asked": {
-              "$ref": "#/$defs/templateConfig"
-            }
-          }
-        }
-      ],
-      "description": "Per-event shell command templates, or null for defaults."
-    },
     "backend": {
       "type": "object",
       "description": "ntfy.sh-specific backend configuration.",
@@ -125,27 +103,6 @@
           "type": "boolean",
           "default": true,
           "description": "Whether this event type triggers notifications."
-        }
-      }
-    },
-    "templateConfig": {
-      "type": "object",
-      "description": "Shell command templates for customizing notification content.",
-      "additionalProperties": false,
-      "properties": {
-        "titleCmd": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "null" }
-          ],
-          "description": "Shell command whose stdout is used as the notification title, or null for default."
-        },
-        "messageCmd": {
-          "oneOf": [
-            { "type": "string" },
-            { "type": "null" }
-          ],
-          "description": "Shell command whose stdout is used as the notification message body, or null for default."
         }
       }
     }

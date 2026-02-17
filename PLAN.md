@@ -290,4 +290,9 @@ Migrate the plugin to use `opencode-notification-sdk` as a runtime dependency. T
 - [x] Update `package.json`: remove `engines.node`, update `prepublishOnly` to use `bun run build`
 - [x] Generate `bun.lock` and remove `package-lock.json`
 - [x] Update `README.md` development section to reference Bun instead of Node.js/npm
+- [x] Remove `templates` from JSON Schema (not in spec's config structure)
+- [x] Remove `templateConfig` definition from schema `$defs`
+- [x] Remove `templates` documentation from README config table, How It Works, and examples
+- [x] Update README "How It Works" to reflect SDK's content utilities model
+- [x] Update schema tests to not expect `templates` property
 - [x] Ensure all tests pass, lint is clean, and package builds cleanly

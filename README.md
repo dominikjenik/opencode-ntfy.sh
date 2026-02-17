@@ -15,18 +15,18 @@ long-running task, walk away, and get notified when it needs your attention.
 ## How It Works
 
 This plugin is a **notification backend** for the `opencode-notification-sdk`.
-The SDK handles all common notification logic:
+The SDK handles common notification logic:
 
 - **Event routing** -- classifying OpenCode events into notification types
 - **Subagent suppression** -- silently suppressing notifications from sub-agent
   (child) sessions for `session.idle` and `session.error` events
-- **Shell command templates** -- user-customizable notification titles and
-  messages via shell commands with `{var_name}` substitution
-- **Default notification content** -- sensible default titles and messages
+- **Content utilities** -- `renderTemplate()`, `execCommand()`, and
+  `execTemplate()` for template rendering and shell command execution
 
-This plugin is responsible only for the ntfy.sh-specific concerns: formatting
-and sending the HTTP POST request, validating ntfy-specific configuration, and
-resolving the notification icon URL.
+This plugin is responsible for the ntfy.sh-specific concerns: producing
+notification content (title and message), formatting and sending the HTTP POST
+request, validating ntfy-specific configuration, and resolving the notification
+icon URL.
 
 ## Notifications
 
@@ -88,9 +88,6 @@ ntfy-specific settings under the `backend` key.
 | `enabled` | `boolean` | No | `true` | Global kill switch for all notifications (handled by SDK). |
 | `events` | `object` | No | (all enabled) | Per-event enable/disable toggles (handled by SDK). |
 | `events.<type>.enabled` | `boolean` | No | `true` | Whether this event type triggers notifications (handled by SDK). |
-| `templates` | `object \| null` | No | `null` | Per-event shell command templates (handled by SDK). |
-| `templates.<type>.titleCmd` | `string \| null` | No | `null` | Shell command to generate notification title (handled by SDK). |
-| `templates.<type>.messageCmd` | `string \| null` | No | `null` | Shell command to generate notification message (handled by SDK). |
 | `backend` | `object` | No | `{}` | ntfy.sh-specific configuration (see below). |
 
 ### Backend Configuration Properties
@@ -109,21 +106,6 @@ The `backend` object contains all ntfy.sh-specific settings:
 | `backend.icon.variant.light` | `string` | No | -- | Custom icon URL override for light mode. |
 | `backend.icon.variant.dark` | `string` | No | -- | Custom icon URL override for dark mode. |
 | `backend.fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S`). |
-
-### Template Variables
-
-Shell command templates support `{var_name}` substitution. These are handled by
-the SDK. Available variables:
-
-| Variable | Available In | Description |
-|---|---|---|
-| `{event}` | All events | The event type string (e.g., `session.idle`) |
-| `{time}` | All events | ISO 8601 timestamp |
-| `{project}` | All events | Project directory name (basename) |
-| `{session_id}` | All events | The session ID (empty string if unavailable) |
-| `{error}` | `session.error` only | The error message |
-| `{permission_type}` | `permission.asked` only | The permission type |
-| `{permission_patterns}` | `permission.asked` only | Comma-separated list of patterns |
 
 ### Example Configurations
 
@@ -150,7 +132,7 @@ With authentication and a self-hosted server:
 }
 ```
 
-Full configuration with templates:
+Full configuration:
 
 ```json
 {
@@ -159,12 +141,6 @@ Full configuration with templates:
     "session.idle": { "enabled": true },
     "session.error": { "enabled": true },
     "permission.asked": { "enabled": true }
-  },
-  "templates": {
-    "session.idle": {
-      "titleCmd": "echo 'Custom Idle Title'",
-      "messageCmd": null
-    }
   },
   "backend": {
     "topic": "my-notifications",
