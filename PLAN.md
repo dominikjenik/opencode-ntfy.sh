@@ -330,3 +330,9 @@ Migrate the plugin to use `opencode-notification-sdk` as a runtime dependency. T
 
 - [x] Update tests, `package.json` `files` list, `README.md`, and schema `$id` to reference `notification-ntfy.schema.json` (matching actual file name and spec) instead of `opencode-ntfy.schema.json`
 - [x] Ensure all 68 tests pass, lint is clean, and package builds cleanly
+
+## Phase 34: Document Variable Substitution in README
+
+- [x] Add Variable Substitution section to README documenting `{env:VAR_NAME}` and `{file:path/to/file}` placeholder syntaxes (SDK feature, user-facing for config)
+- [x] Update full configuration example to use `{env:NTFY_TOPIC}` and `{file:~/.secrets/ntfy-token}` placeholders matching the spec's example
+- [x] Ensure all 68 tests pass and package builds cleanly

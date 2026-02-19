@@ -1295,10 +1295,10 @@ obug@^2.1.1:
   resolved "https://registry.npmjs.org/obug/-/obug-2.1.1.tgz"
   integrity sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==
 
-opencode-notification-sdk@1:
-  version "1.0.3"
-  resolved "https://registry.npmjs.org/opencode-notification-sdk/-/opencode-notification-sdk-1.0.3.tgz"
-  integrity sha512-hLCAqqQvQUexmcbMVleK2HhX/sR3POiSsqQuXOd31u4Ny5uMGUH3i3p93e3KtulpUkTvIq5lmuuVFZLL4n8kNg==
+opencode-notification-sdk@^1.1.0:
+  version "1.1.0"
+  resolved "https://registry.npmjs.org/opencode-notification-sdk/-/opencode-notification-sdk-1.1.0.tgz"
+  integrity sha512-UKLBchsrLWqdE3bB0g4zWFmTOur55KqfrmC7paYv/H5An6DB6b3D74d3q7PkHH1uMao5G2tqTDHg0ylcFgjW/A==
 
 optionator@^0.9.3:
   version "0.9.4"

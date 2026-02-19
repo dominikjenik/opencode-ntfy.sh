@@ -94,6 +94,15 @@ The `backend` object contains all ntfy.sh-specific settings:
 | `backend.message.<event>.command` | `string` | No | -- | A template string rendered via `renderTemplate`, then executed as a shell command via `execTemplate`; the trimmed stdout is used as the message |
 | `backend.fetchTimeout` | `string` | No | -- | ISO 8601 duration for the HTTP request timeout (e.g., `PT10S` for 10 seconds) |
 
+#### Variable Substitution
+
+All string values in the config file support two placeholder syntaxes, expanded by the SDK before validation:
+
+- **`{env:VAR_NAME}`** -- replaced with the value of the corresponding environment variable. If the variable is not set, the placeholder is replaced with an empty string.
+- **`{file:path/to/file}`** -- replaced with the trimmed contents of the specified file. Paths can be absolute (`/`), home-relative (`~`), or relative to the config file's directory. If the file does not exist or cannot be read, the placeholder is replaced with an empty string.
+
+This allows sensitive values like topics and tokens to be externalized, making the config safe to commit to version control.
+
 #### Example Configuration
 
 ```json
@@ -105,9 +114,10 @@ The `backend` object contains all ntfy.sh-specific settings:
     "permission.asked": { "enabled": true }
   },
   "backend": {
-    "topic": "my-notifications",
+    "topic": "{env:NTFY_TOPIC}",
     "server": "https://ntfy.sh",
     "priority": "default",
+    "token": "{file:~/.secrets/ntfy-token}",
     "title": {
       "session.idle": { "value": "{project}: Agent Idle" },
       "session.error": { "value": "{project}: Agent Error" }
