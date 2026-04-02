@@ -4,12 +4,7 @@ import type {
   NotificationContext,
   NotificationEvent,
 } from "opencode-notification-sdk";
-import { renderTemplate, execTemplate } from "opencode-notification-sdk";
-import type {
-  NtfyBackendConfig,
-  ContentTemplate,
-  ContentTemplateMap,
-} from "./config.js";
+import { execSync } from "node:child_process";
 
 const DEFAULT_TITLES: Record<NotificationEvent, string> = {
   "session.idle": "Agent Idle",
@@ -30,85 +25,53 @@ const DEFAULT_TAGS: Record<NotificationEvent, string> = {
   "permission.asked": "lock",
 };
 
-function isValueTemplate(
-  template: ContentTemplate
-): template is { readonly value: string } {
-  return "value" in template;
-}
-
-async function resolveContent(
-  templateMap: ContentTemplateMap | undefined,
-  event: NotificationEvent,
-  defaults: Record<NotificationEvent, string>,
-  context: NotificationContext,
-  $?: PluginInput["$"]
-): Promise<string> {
-  const template = templateMap?.[event];
-  if (!template) {
-    return defaults[event] ?? "";
-  }
-  if (isValueTemplate(template)) {
-    return renderTemplate(template.value, context);
-  }
-  // command template
-  if (!$) {
-    throw new Error(
-      `Command template configured for ${event} but no shell ($) was provided`
-    );
-  }
-  return execTemplate($, template.command, context);
-}
-
 export function createNtfyBackend(
   config: NtfyBackendConfig,
-  $?: PluginInput["$"]
+  _?: PluginInput["$"]
 ): NotificationBackend {
   return {
     async send(context: NotificationContext): Promise<void> {
-      const url = `${config.server}/${config.topic}`;
-
-      const title = await resolveContent(
-        config.title,
-        context.event,
-        DEFAULT_TITLES,
-        context,
-        $
-      );
-      const message = await resolveContent(
-        config.message,
-        context.event,
-        DEFAULT_MESSAGES,
-        context,
-        $
-      );
-      const tags = DEFAULT_TAGS[context.event] ?? "";
-
-      const headers: Record<string, string> = {
-        Title: title,
-        Priority: config.priority,
-        Tags: tags,
-        "X-Icon": config.iconUrl,
-        ...(config.token
-          ? { Authorization: `Bearer ${config.token}` }
-          : {}),
-      };
-
-      const fetchOptions: RequestInit = {
-        method: "POST",
-        headers,
-        body: message,
-        ...(config.fetchTimeout !== undefined
-          ? { signal: AbortSignal.timeout(config.fetchTimeout) }
-          : {}),
-      };
-
-      const response = await fetch(url, fetchOptions);
-
-      if (!response.ok) {
-        throw new Error(
-          `ntfy request failed: ${response.status} ${response.statusText}`
-        );
+      const server = config.server || "https://ntfy.sh";
+      const topic = config.topic;
+      
+      const title = DEFAULT_TITLES[context.event] || "OpenCode";
+      const message = DEFAULT_MESSAGES[context.event] || "OpenCode event";
+      const tags = DEFAULT_TAGS[context.event] || "";
+      
+      const safeMessage = message.replace(/'/g, "'\\''");
+      const safeTitle = title.replace(/'/g, "'\\''");
+      const cmd = `curl -s -m 10 -d '${safeMessage}' -H 'Title: ${safeTitle}' -H 'Tags: ${tags}' ${server}/${topic}`;
+      
+      try {
+        execSync(cmd, { encoding: "utf-8", timeout: 15000 });
+      } catch (e) {
+        console.error("NTFY: notification failed:", (e as Error).message);
       }
     },
   };
+}
+
+export interface ValueTemplate {
+  readonly value: string;
+}
+
+export interface CommandTemplate {
+  readonly command: string;
+}
+
+export type ContentTemplate = ValueTemplate | CommandTemplate;
+
+export type ContentTemplateMap = Partial<
+  Record<NotificationEvent, ContentTemplate>
+>;
+
+export interface NtfyBackendConfig {
+  topic: string;
+  server: string;
+  token?: string;
+  priority: string;
+  iconUrl: string;
+  fetchTimeout?: number;
+  title?: ContentTemplateMap;
+  message?: ContentTemplateMap;
 }

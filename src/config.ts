@@ -1,33 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse, toSeconds } from "iso8601-duration";
 import type { NotificationEvent } from "opencode-notification-sdk";
-
-export interface ValueTemplate {
-  readonly value: string;
-}
-
-export interface CommandTemplate {
-  readonly command: string;
-}
-
-export type ContentTemplate = ValueTemplate | CommandTemplate;
-
-export type ContentTemplateMap = Partial<
-  Record<NotificationEvent, ContentTemplate>
->;
-
-export interface NtfyBackendConfig {
-  topic: string;
-  server: string;
-  token?: string;
-  priority: string;
-  iconUrl: string;
-  fetchTimeout?: number;
-  title?: ContentTemplateMap;
-  message?: ContentTemplateMap;
-}
 
 const VALID_PRIORITIES = ["min", "low", "default", "high", "max"] as const;
 const VALID_EVENTS: readonly NotificationEvent[] = [
@@ -59,34 +33,19 @@ function resolveIconUrl(
   return `${BASE_ICON_URL}/opencode-icon-${mode}.png`;
 }
 
-function parseISO8601Duration(duration: string): number {
-  try {
-    const parsed = parse(duration);
-    return Math.round(toSeconds(parsed) * 1000);
-  } catch {
-    throw new Error(
-      `Invalid ISO 8601 duration: "${duration}". Expected format like PT30S, PT5M, PT1H30M15S.`
-    );
-  }
-}
-
 export function parseNtfyBackendConfig(
   raw: Record<string, unknown>
 ): NtfyBackendConfig {
-  // Required: topic
   if (typeof raw.topic !== "string" || raw.topic.length === 0) {
     throw new Error("Backend config must contain a non-empty 'topic' string");
   }
   const topic = raw.topic;
 
-  // Optional: server
   const server =
     typeof raw.server === "string" ? raw.server : "https://ntfy.sh";
 
-  // Optional: token
   const token = typeof raw.token === "string" ? raw.token : undefined;
 
-  // Optional: priority
   const priority =
     typeof raw.priority === "string" ? raw.priority : "default";
   if (!VALID_PRIORITIES.some((p) => p === priority)) {
@@ -95,7 +54,6 @@ export function parseNtfyBackendConfig(
     );
   }
 
-  // Optional: icon object { mode, variant: { light, dark } }
   const iconObj = isRecord(raw.icon) ? raw.icon : {};
   const iconModeRaw =
     typeof iconObj.mode === "string" ? iconObj.mode : "dark";
@@ -110,13 +68,11 @@ export function parseNtfyBackendConfig(
     typeof variantObj.dark === "string" ? variantObj.dark : undefined;
   const iconUrl = resolveIconUrl(iconMode, iconLight, iconDark);
 
-  // Optional: fetchTimeout (ISO 8601 duration -> ms)
   const fetchTimeout =
-    typeof raw.fetchTimeout === "string"
-      ? parseISO8601Duration(raw.fetchTimeout)
+    typeof raw.fetchTimeout === "number"
+      ? raw.fetchTimeout
       : undefined;
 
-  // Optional: title and message content templates
   const title = isRecord(raw.title)
     ? parseContentTemplateMap(raw.title, "title")
     : undefined;
@@ -167,4 +123,29 @@ function parseContentTemplateMap(
     }
   }
   return result;
+}
+
+export interface ValueTemplate {
+  readonly value: string;
+}
+
+export interface CommandTemplate {
+  readonly command: string;
+}
+
+export type ContentTemplate = ValueTemplate | CommandTemplate;
+
+export type ContentTemplateMap = Partial<
+  Record<NotificationEvent, ContentTemplate>
+>;
+
+export interface NtfyBackendConfig {
+  topic: string;
+  server: string;
+  token?: string;
+  priority: string;
+  iconUrl: string;
+  fetchTimeout?: number;
+  title?: ContentTemplateMap;
+  message?: ContentTemplateMap;
 }
