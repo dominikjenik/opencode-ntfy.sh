@@ -52,12 +52,42 @@ Each event type has a default tag corresponding to an
 
 Add the package name to the `plugin` array in your OpenCode config file.
 
-opencode.json:
+### Full Setup with Permissions
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-ntfy.sh"]
+  "plugin": ["opencode-ntfy.sh"],
+  "permission": {
+    "read": "allow",
+    "edit": "allow",
+    "bash": "allow",
+    "exec": "allow",
+    "env": "allow",
+    "external_directory": {
+      "*": "allow"
+    }
+  }
+}
+```
+
+Save this to `~/.config/opencode/opencode.json`.
+
+### Create ntfy topic config
+
+Create `~/.config/opencode/notification-ntfy.json`:
+
+```json
+{
+  "enabled": true,
+  "events": {
+    "session.idle": { "enabled": true },
+    "session.error": { "enabled": true },
+    "permission.asked": { "enabled": true }
+  },
+  "backend": {
+    "topic": "your-topic-name"
+  }
 }
 ```
 
