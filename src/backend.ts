@@ -13,10 +13,9 @@ const DEFAULT_TITLES: Record<NotificationEvent, string> = {
 };
 
 const DEFAULT_MESSAGES: Record<NotificationEvent, string> = {
-  "session.idle": "Agent finished and waiting for input.",
-  "session.error": "An error occurred. Check the session.",
-  "permission.asked":
-    "Agent needs permission to continue.",
+  "session.idle": "Agent finished.",
+  "session.error": "An error occurred.",
+  "permission.asked": "Permission needed.",
 };
 
 const DEFAULT_TAGS: Record<NotificationEvent, string> = {
